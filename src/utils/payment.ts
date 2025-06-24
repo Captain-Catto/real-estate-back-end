@@ -1,137 +1,155 @@
 import crypto from "crypto";
 import { format } from "date-fns";
-
-// VNPAY Configuration
-export const vnpayConfig = {
-  tmnCode: process.env.VNP_TMN_CODE || "DEMO",
-  hashSecret: process.env.VNP_HASH_SECRET || "VNPAYSECRET",
-  url:
-    process.env.VNP_URL || "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html",
-  returnUrl:
-    process.env.VNP_RETURN_URL || "http://localhost:3000/payment/vnpay-return",
-  ipnUrl:
-    process.env.VNP_IPN_URL || "http://localhost:3005/api/payments/vnpay/ipn",
-};
+import querystring from "querystring";
 
 export interface VNPayParams {
-  [key: string]: string | number;
+  [key: string]: string;
+}
+
+export interface VnpayConfig {
+  tmnCode: string;
+  hashSecret: string;
+  url: string;
+  returnUrl: string;
+  ipnUrl: string;
 }
 
 /**
- * Generate unique order ID
+ * Lấy cấu hình VNPAY từ biến môi trường
  */
-export const generateOrderId = (): string => {
+export function getVnpayConfig(): VnpayConfig {
+  return {
+    tmnCode: process.env.VNP_TMN_CODE || "",
+    hashSecret: process.env.VNP_HASH_SECRET || "",
+    url:
+      process.env.VNP_URL ||
+      "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html",
+    returnUrl:
+      process.env.VNP_RETURN_URL ||
+      "http://localhost:3000/nguoi-dung/vi-tien/payment-result",
+    ipnUrl:
+      process.env.VNP_IPN_URL || "http://localhost:8080/api/payments/vnpay/ipn",
+  };
+}
+
+/**
+ * Tạo mã đơn hàng duy nhất
+ */
+export function generateOrderId(): string {
   const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 15);
+  const random = Math.random().toString(36).substring(2, 10);
   return `ORDER_${timestamp}_${random}`.toUpperCase();
-};
+}
 
 /**
- * Sort object properties alphabetically (required by VNPAY)
+ * Encode chuẩn cho VNPay (dùng encodeURIComponent, thay %20 bằng +)
  */
-export const sortObject = (obj: any): any => {
-  const sorted: any = {};
-  const keys = Object.keys(obj).sort();
+function vnpEncode(str: string): string {
+  return encodeURIComponent(str).replace(/%20/g, "+");
+}
 
-  keys.forEach((key) => {
-    if (obj[key] !== null && obj[key] !== undefined && obj[key] !== "") {
-      sorted[key] = obj[key];
-    }
-  });
-
+/**
+ * Sắp xếp object theo thứ tự key alphabet, loại bỏ value null/undefined/rỗng
+ */
+export function sortObject(obj: Record<string, any>): Record<string, any> {
+  const sorted: Record<string, any> = {};
+  Object.keys(obj)
+    .sort()
+    .forEach((key) => {
+      if (obj[key] !== null && obj[key] !== undefined && obj[key] !== "") {
+        sorted[key] = obj[key];
+      }
+    });
   return sorted;
-};
+}
 
 /**
- * Create VNPAY secure hash
+ * Tạo query string chuẩn cho hash (key=value nối &), encode key và value
  */
-export const createVNPaySecureHash = (
+export function buildVNPayQueryString(params: Record<string, any>): string {
+  const sorted = sortObject(params);
+  return Object.keys(sorted)
+    .map((key) => `${vnpEncode(key)}=${vnpEncode(sorted[key])}`)
+    .join("&");
+}
+
+/**
+ * Tạo secure hash cho VNPay (sha512)
+ */
+export function createVNPaySecureHash(
   params: VNPayParams,
   secretKey: string
-): string => {
-  // Sort parameters
-  const sortedParams = sortObject(params);
-
-  // Create query string
-  const querystring = Object.keys(sortedParams)
-    .map((key) => `${key}=${encodeURIComponent(sortedParams[key])}`)
-    .join("&");
-
-  // Create hash
-  const hmac = crypto.createHmac("sha512", secretKey);
-  return hmac.update(Buffer.from(querystring, "utf-8")).digest("hex");
-};
+): string {
+  const data = buildVNPayQueryString(params);
+  return crypto
+    .createHmac("sha512", secretKey)
+    .update(Buffer.from(data, "utf-8"))
+    .digest("hex");
+}
 
 /**
- * Verify VNPAY secure hash
+ * Xác thực secure hash trả về từ VNPay
  */
-export const verifyVNPaySecureHash = (
-  params: any,
+export function verifyVNPaySecureHash(
+  params: VNPayParams,
   receivedHash: string,
   secretKey: string
-): boolean => {
-  // Remove hash fields from params
+): boolean {
   const verifyParams = { ...params };
   delete verifyParams.vnp_SecureHash;
   delete verifyParams.vnp_SecureHashType;
-
-  // Create hash from remaining parameters
   const calculatedHash = createVNPaySecureHash(verifyParams, secretKey);
-
   return calculatedHash === receivedHash;
-};
+}
 
 /**
- * Build VNPAY payment URL
+ * Tạo URL thanh toán VNPay
  */
-export const buildVNPayUrl = (params: VNPayParams): string => {
-  const sortedParams = sortObject(params);
-  const url = new URL(vnpayConfig.url);
-
-  Object.keys(sortedParams).forEach((key) => {
-    url.searchParams.append(key, sortedParams[key].toString());
-  });
-
-  return url.toString();
-};
+export function buildVNPayUrl(params: VNPayParams): string {
+  const { url } = getVnpayConfig();
+  // Sử dụng buildVNPayQueryString để đảm bảo encode đúng chuẩn
+  const query = buildVNPayQueryString(params);
+  return `${url}?${query}`;
+}
 
 /**
- * Sanitize order info (remove special characters not allowed by VNPAY)
+ * Làm sạch thông tin order (loại ký tự đặc biệt không hợp lệ)
  */
-export const sanitizeOrderInfo = (orderInfo: string): string => {
+export function sanitizeOrderInfo(orderInfo: string): string {
   return orderInfo.replace(/[#%&+]/g, "");
-};
+}
 
 /**
- * Format amount for VNPAY (multiply by 100 as VNPAY uses xu unit)
+ * Định dạng số tiền cho VNPay (nhân 100)
  */
-export const formatVNPayAmount = (amount: number): number => {
+export function formatVNPayAmount(amount: number): number {
   return Math.round(amount * 100);
-};
+}
 
 /**
- * Parse VNPAY amount (divide by 100 to get VND)
+ * Parse số tiền từ VNPay (chia 100)
  */
-export const parseVNPayAmount = (amount: number): number => {
+export function parseVNPayAmount(amount: number): number {
   return Math.round(amount / 100);
-};
+}
 
 /**
- * Get current timestamp in VNPAY format
+ * Lấy timestamp hiện tại theo định dạng VNPay
  */
-export const getVNPayTimestamp = (): string => {
+export function getVNPayTimestamp(): string {
   return format(new Date(), "yyyyMMddHHmmss");
-};
+}
 
 /**
- * Get client IP address
+ * Lấy IP client từ request (Express)
  */
-export const getClientIp = (req: any): string => {
-  return (
-    req.ip ||
+export function getClientIp(req: any): string {
+  let ip =
+    req.headers["x-forwarded-for"]?.split(",")[0] ||
     req.connection?.remoteAddress ||
     req.socket?.remoteAddress ||
-    req.headers["x-forwarded-for"]?.split(",")[0] ||
-    "127.0.0.1"
-  );
-};
+    req.ip ||
+    "127.0.0.1";
+  if (ip === "::1" || ip === "0:0:0:0:0:0:0:1") ip = "127.0.0.1";
+  return ip;
+}

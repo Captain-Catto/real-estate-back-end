@@ -7,6 +7,7 @@ import {
   PaymentController,
 } from "../controllers";
 import { authenticateUser } from "../middleware";
+import { uploadS3 } from "../utils/s3Upload";
 
 const router = Router();
 const indexController = new IndexController();
@@ -16,30 +17,18 @@ const favoriteController = new FavoriteController();
 const paymentController = new PaymentController();
 
 export function setRoutes(app: Express) {
-  // Base routes
+  // Trang chủ
   app.use("/", router);
   router.get("/", indexController.getIndex.bind(indexController));
 
-  // Auth routes
+  // Auth
   const authRouter = Router();
   app.use("/api/auth", authRouter);
-
-  // Public auth routes
   authRouter.post("/register", authController.register.bind(authController));
   authRouter.post("/login", authController.login.bind(authController));
   authRouter.post("/refresh", authController.refreshToken.bind(authController));
-
-  // Protected auth routes
-  authRouter.post(
-    "/logout",
-    authenticateUser,
-    authController.logout.bind(authController)
-  );
-  authRouter.post(
-    "/logout-all",
-    authenticateUser,
-    authController.logoutAll.bind(authController)
-  );
+  authRouter.post("/logout", authController.logout.bind(authController));
+  authRouter.post("/logout-all", authController.logoutAll.bind(authController));
   authRouter.get(
     "/profile",
     authenticateUser,
@@ -61,26 +50,21 @@ export function setRoutes(app: Express) {
     authController.deleteAccount.bind(authController)
   );
 
-  // Post routes
+  // Post
   const postRouter = Router();
   app.use("/api/posts", postRouter);
-
-  // Public post routes
   postRouter.get("/", postController.getPosts.bind(postController));
   postRouter.get("/:postId", postController.getPostById.bind(postController));
-
-  // Protected post routes
   postRouter.post(
     "/",
     authenticateUser,
+    uploadS3.array("images", 20),
     postController.createPost.bind(postController)
   );
 
-  // Favorite routes
+  // Favorite
   const favoriteRouter = Router();
   app.use("/api/favorites", favoriteRouter);
-
-  // All favorite routes are protected
   favoriteRouter.post(
     "/",
     authenticateUser,
@@ -107,11 +91,11 @@ export function setRoutes(app: Express) {
     favoriteController.getFavoriteStats.bind(favoriteController)
   );
 
-  // Payment routes
+  // Payment
   const paymentRouter = Router();
   app.use("/api/payments", paymentRouter);
 
-  // Protected payment routes
+  // Các route thanh toán cần đăng nhập
   paymentRouter.post(
     "/vnpay/create-payment-url",
     authenticateUser,
@@ -128,7 +112,7 @@ export function setRoutes(app: Express) {
     paymentController.getPaymentDetails.bind(paymentController)
   );
 
-  // Public payment routes (for VNPAY callbacks)
+  // Các route callback/public của VNPAY
   paymentRouter.get(
     "/vnpay/return",
     paymentController.processVNPayReturn.bind(paymentController)

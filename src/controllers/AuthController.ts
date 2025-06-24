@@ -27,6 +27,16 @@ export class AuthController {
         });
       }
 
+      // kiểm tra password phải có 1 ký tự chữ hoa, 1 ký tự số
+      const passwordRegex = /^(?=.*[A-Z])(?=.*\d)[A-Za-z\d@$!%*?&]{6,}$/;
+      if (!passwordRegex.test(password)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Password must contain at least one uppercase letter and one number",
+        });
+      }
+
       // Check if user already exists
       const existingUser = await User.findOne({
         $or: [{ email }, { username }],
@@ -51,20 +61,20 @@ export class AuthController {
       user.refreshTokens.push(refreshToken);
       await user.save();
 
+      // Set refresh token as httpOnly cookie (giống như login)
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: "/",
+      });
+
       res.status(201).json({
         success: true,
         message: "User registered successfully",
         data: {
-          user: {
-            id: user._id,
-            username: user.username,
-            email: user.email,
-            createdAt: user.createdAt,
-          },
-          tokens: {
-            accessToken,
-            refreshToken,
-          },
+          accessToken, // Chỉ trả access token, refresh token lưu trong cookie
         },
       });
     } catch (error) {
@@ -114,19 +124,20 @@ export class AuthController {
       user.refreshTokens.push(refreshToken);
       await user.save();
 
+      // Set refresh token as httpOnly cookie
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production", // HTTPS only in production
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: "/",
+      });
+
       res.json({
         success: true,
         message: "Login successful",
         data: {
-          user: {
-            id: user._id,
-            username: user.username,
-            email: user.email,
-          },
-          tokens: {
-            accessToken,
-            refreshToken,
-          },
+          accessToken, // Chỉ trả access token
         },
       });
     } catch (error) {
@@ -140,7 +151,8 @@ export class AuthController {
 
   async refreshToken(req: Request, res: Response) {
     try {
-      const { refreshToken } = req.body;
+      // Lấy refresh token từ cookie thay vì body
+      const refreshToken = req.cookies.refreshToken;
 
       if (!refreshToken) {
         return res.status(401).json({
@@ -173,14 +185,20 @@ export class AuthController {
         user.refreshTokens.push(newRefreshToken);
         await user.save();
 
+        // Set cookie mới với refresh token mới
+        res.cookie("refreshToken", newRefreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+          path: "/",
+        });
+
         res.json({
           success: true,
           message: "Tokens refreshed successfully",
           data: {
-            tokens: {
-              accessToken: newAccessToken,
-              refreshToken: newRefreshToken,
-            },
+            accessToken: newAccessToken,
           },
         });
       } catch (error) {
@@ -210,31 +228,58 @@ export class AuthController {
     }
   }
 
-  async logout(req: AuthenticatedRequest, res: Response) {
+  async logout(req: Request, res: Response) {
     try {
-      const { refreshToken } = req.body;
-      const userId = req.user?.userId;
+      // Lấy refresh token từ cookie
+      const refreshToken = req.cookies.refreshToken;
 
-      if (!userId) {
-        return res.status(401).json({
+      if (!refreshToken) {
+        return res.status(400).json({
           success: false,
-          message: "User not authenticated",
+          message: "No refresh token found",
         });
       }
 
-      // Find user and remove refresh token
-      const user = await User.findById(userId);
-      if (user && refreshToken) {
-        user.refreshTokens = user.refreshTokens.filter(
-          (token) => token !== refreshToken
-        );
-        await user.save();
-      }
+      try {
+        // Verify refresh token để lấy userId
+        const decoded = verifyRefreshToken(refreshToken);
+        const userId = decoded.userId;
 
-      res.json({
-        success: true,
-        message: "Logged out successfully",
-      });
+        // Find user and remove refresh token
+        const user = await User.findById(userId);
+        if (user) {
+          user.refreshTokens = user.refreshTokens.filter(
+            (token) => token !== refreshToken
+          );
+          await user.save();
+        }
+
+        // Clear cookie
+        res.clearCookie("refreshToken", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
+          path: "/",
+        });
+
+        res.json({
+          success: true,
+          message: "Logged out successfully",
+        });
+      } catch (error) {
+        // Nếu refresh token không hợp lệ, vẫn clear cookie
+        res.clearCookie("refreshToken", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
+          path: "/",
+        });
+
+        res.json({
+          success: true,
+          message: "Logged out successfully",
+        });
+      }
     } catch (error) {
       console.error("Logout error:", error);
       res.status(500).json({
@@ -244,28 +289,57 @@ export class AuthController {
     }
   }
 
-  async logoutAll(req: AuthenticatedRequest, res: Response) {
+  async logoutAll(req: Request, res: Response) {
+    // Đổi từ AuthenticatedRequest thành Request
     try {
-      const userId = req.user?.userId;
+      // Lấy refresh token từ cookie
+      const refreshToken = req.cookies.refreshToken;
 
-      if (!userId) {
-        return res.status(401).json({
+      if (!refreshToken) {
+        return res.status(400).json({
           success: false,
-          message: "User not authenticated",
+          message: "No refresh token found",
         });
       }
 
-      // Remove all refresh tokens
-      const user = await User.findById(userId);
-      if (user) {
-        user.refreshTokens = [];
-        await user.save();
-      }
+      try {
+        // Verify refresh token để lấy userId
+        const decoded = verifyRefreshToken(refreshToken);
+        const userId = decoded.userId;
 
-      res.json({
-        success: true,
-        message: "Logged out from all devices successfully",
-      });
+        // Find user and remove ALL refresh tokens
+        const user = await User.findById(userId);
+        if (user) {
+          user.refreshTokens = []; // Clear tất cả refresh tokens
+          await user.save();
+        }
+
+        // Clear cookie hiện tại
+        res.clearCookie("refreshToken", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
+          path: "/",
+        });
+
+        res.json({
+          success: true,
+          message: "Logged out from all devices successfully",
+        });
+      } catch (error) {
+        // Nếu refresh token không hợp lệ, vẫn clear cookie
+        res.clearCookie("refreshToken", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
+          path: "/",
+        });
+
+        res.json({
+          success: true,
+          message: "Logged out from all devices successfully",
+        });
+      }
     } catch (error) {
       console.error("Logout all error:", error);
       res.status(500).json({

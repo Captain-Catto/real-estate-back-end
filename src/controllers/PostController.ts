@@ -8,23 +8,25 @@ export class PostController {
   async createPost(req: AuthenticatedRequest, res: Response) {
     try {
       const userId = req.user?.userId;
-      const { title, description, content, price, location, category, tags } =
-        req.body;
+      const {
+        title,
+        description,
+        content,
+        price,
+        location,
+        category,
+        tags /* ... */,
+      } = req.body;
 
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: "User not authenticated",
+      // Lấy URL ảnh từ S3
+      const images: string[] = [];
+      if (req.files && Array.isArray(req.files)) {
+        req.files.forEach((file: any) => {
+          images.push(file.location); // file.location là URL public trên S3
         });
       }
 
-      // Validate required fields
-      if (!title || !description || !content || !category) {
-        return res.status(400).json({
-          success: false,
-          message: "Title, description, content, and category are required",
-        });
-      }
+      console.log("Creating post with images:", images);
 
       const post = new Post({
         title,
@@ -35,20 +37,17 @@ export class PostController {
         category,
         tags: tags || [],
         author: userId,
-        images: [], // Will be updated when images are uploaded
+        images, // Lưu URL ảnh S3
+        // ... các trường khác
       });
 
       await post.save();
-
-      // Populate author info
       await post.populate("author", "username email avatar");
 
       res.status(201).json({
         success: true,
         message: "Post created successfully",
-        data: {
-          post: post,
-        },
+        data: { post },
       });
     } catch (error) {
       console.error("Create post error:", error);

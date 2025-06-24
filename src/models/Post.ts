@@ -1,18 +1,32 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export interface IPost extends Document {
-  title: string;
-  description: string;
-  content: string;
-  price?: number;
-  location?: string;
-  images: string[];
-  category: string;
-  tags: string[];
-  author: mongoose.Types.ObjectId;
-  status: "active" | "inactive" | "sold";
-  createdAt: Date;
-  updatedAt: Date;
+  title: String;
+  description: String;
+  price: Number;
+  location: String;
+  category: String;
+  tags: [String];
+  author: { type: mongoose.Schema.Types.ObjectId; ref: "User" };
+  images: [String]; // <-- array string
+  area: String;
+  currency: String;
+  legalDocs: String;
+  furniture: String;
+  bedrooms: Number;
+  bathrooms: Number;
+  floors: Number;
+  houseDirection: String;
+  balconyDirection: String;
+  roadWidth: String;
+  frontWidth: String;
+  contactName: String;
+  email: String;
+  phone: String;
+  packageId: String;
+  packageDuration: Number;
+  status: String; // active, inactive, sold
+  // ... các trường khác
 }
 
 const postSchema = new Schema<IPost>(
@@ -28,10 +42,6 @@ const postSchema = new Schema<IPost>(
       required: true,
       trim: true,
       maxlength: 500,
-    },
-    content: {
-      type: String,
-      required: true,
     },
     price: {
       type: Number,
@@ -64,8 +74,8 @@ const postSchema = new Schema<IPost>(
     },
     status: {
       type: String,
-      enum: ["active", "inactive", "sold"],
-      default: "active",
+      enum: ["pending", "active", "denied", "inactive", "removed"],
+      default: "pending",
     },
   },
   {

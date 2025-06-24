@@ -1,15 +1,16 @@
+import dotenv from "dotenv";
 import express from "express";
 import mongoose from "mongoose";
+import cookieParser from "cookie-parser";
 import cors from "cors";
-import dotenv from "dotenv";
 import path from "path";
 import { setRoutes } from "./routes/index";
 import { requestLogger } from "./middleware/index";
-
 dotenv.config();
+console.log("VNP_HASH_SECRET:", process.env.VNP_HASH_SECRET);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // MongoDB connection
 mongoose
@@ -20,7 +21,15 @@ mongoose
   .catch((error) => console.error("MongoDB connection error:", error));
 
 // Middleware setup
-app.use(cors());
+app.use(
+  cors({
+    origin: "http://localhost:3000", // Chỉ định cụ thể origin
+    credentials: true, // Cho phép gửi cookies
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
