@@ -38,6 +38,11 @@ export class IndexController {
           details: "GET /api/payments/:orderId",
           checkStatus: "GET /api/payments/check-status/:orderId",
         },
+        locations: {
+          getProvinces: "GET /api/locations/provinces",
+          getDistricts: "GET /api/locations/districts/:provinceCode",
+          getWards: "GET /api/locations/wards/:provinceCode/:districtCode",
+        },
       },
     });
   }
@@ -47,3 +52,5 @@ export { AuthController } from "./AuthController";
 export { PostController } from "./PostController";
 export { FavoriteController } from "./FavoriteController";
 export { PaymentController } from "./PaymentController";
+export { LocationController } from "./LocationController";
+export { AiController } from "./AiController";

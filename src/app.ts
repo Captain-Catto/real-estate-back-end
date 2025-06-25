@@ -7,7 +7,6 @@ import path from "path";
 import { setRoutes } from "./routes/index";
 import { requestLogger } from "./middleware/index";
 dotenv.config();
-console.log("VNP_HASH_SECRET:", process.env.VNP_HASH_SECRET);
 
 const app = express();
 const PORT = process.env.PORT || 8080;

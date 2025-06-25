@@ -1,6 +1,5 @@
 import crypto from "crypto";
 import { format } from "date-fns";
-import querystring from "querystring";
 
 export interface VNPayParams {
   [key: string]: string;

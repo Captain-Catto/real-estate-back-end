@@ -5,6 +5,7 @@ export interface TokenPayload {
   userId: string;
   username: string;
   email: string;
+  role: string;
 }
 
 export const generateAccessToken = (user: IUser): string => {
@@ -12,6 +13,7 @@ export const generateAccessToken = (user: IUser): string => {
     userId: user._id.toString(),
     username: user.username,
     email: user.email,
+    role: user.role || "user",
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET || "default-secret", {
@@ -24,6 +26,7 @@ export const generateRefreshToken = (user: IUser): string => {
     userId: user._id.toString(),
     username: user.username,
     email: user.email,
+    role: user.role || "user",
   };
 
   return jwt.sign(

@@ -5,6 +5,8 @@ import {
   PostController,
   FavoriteController,
   PaymentController,
+  LocationController,
+  AiController,
 } from "../controllers";
 import { authenticateUser } from "../middleware";
 import { uploadS3 } from "../utils/s3Upload";
@@ -15,6 +17,8 @@ const authController = new AuthController();
 const postController = new PostController();
 const favoriteController = new FavoriteController();
 const paymentController = new PaymentController();
+const locationController = new LocationController();
+const aiController = new AiController();
 
 export function setRoutes(app: Express) {
   // Trang chủ
@@ -54,7 +58,18 @@ export function setRoutes(app: Express) {
   const postRouter = Router();
   app.use("/api/posts", postRouter);
   postRouter.get("/", postController.getPosts.bind(postController));
+  postRouter.get(
+    "/my",
+    authenticateUser,
+    postController.getMyPosts.bind(postController)
+  );
   postRouter.get("/:postId", postController.getPostById.bind(postController));
+
+  postRouter.get(
+    "/user/:userId",
+    authenticateUser,
+    postController.getPostsByUser.bind(postController)
+  );
   postRouter.post(
     "/",
     authenticateUser,
@@ -124,5 +139,36 @@ export function setRoutes(app: Express) {
   paymentRouter.get(
     "/check-status/:orderId",
     paymentController.checkPaymentStatus.bind(paymentController)
+  );
+
+  // Location
+  const locationRouter = Router();
+  app.use("/api/locations", locationRouter);
+
+  locationRouter.get(
+    "/provinces",
+    locationController.getProvinces.bind(locationController)
+  );
+  locationRouter.get(
+    "/districts/:provinceCode",
+    locationController.getDistricts.bind(locationController)
+  );
+  locationRouter.get(
+    "/wards/:provinceCode/:districtCode",
+    locationController.getWards.bind(locationController)
+  );
+
+  // AI
+  const aiRouter = Router();
+  app.use("/api/ai", aiRouter);
+  aiRouter.post(
+    "/generate-title",
+    authenticateUser,
+    aiController.generateTitle.bind(aiController)
+  );
+  aiRouter.post(
+    "/generate-description",
+    authenticateUser,
+    aiController.generateDescription.bind(aiController)
   );
 }

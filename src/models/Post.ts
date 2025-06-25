@@ -1,10 +1,16 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export interface IPost extends Document {
+  type: String; // bán, cho thuê
   title: String;
   description: String;
   price: Number;
-  location: String;
+  location: {
+    province: String;
+    district: String;
+    ward: String;
+    street?: String; // optional
+  };
   category: String;
   tags: [String];
   author: { type: mongoose.Schema.Types.ObjectId; ref: "User" };
@@ -31,6 +37,11 @@ export interface IPost extends Document {
 
 const postSchema = new Schema<IPost>(
   {
+    type: {
+      type: String,
+      required: true,
+      enum: ["ban", "cho-thue"],
+    },
     title: {
       type: String,
       required: true,
@@ -41,15 +52,17 @@ const postSchema = new Schema<IPost>(
       type: String,
       required: true,
       trim: true,
-      maxlength: 500,
+      maxlength: 1500,
     },
     price: {
       type: Number,
       min: 0,
     },
     location: {
-      type: String,
-      trim: true,
+      province: { type: String, required: true },
+      district: { type: String, required: true },
+      ward: { type: String, required: true },
+      street: { type: String, trim: true },
     },
     images: [
       {
