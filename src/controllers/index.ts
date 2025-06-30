@@ -54,3 +54,6 @@ export { FavoriteController } from "./FavoriteController";
 export { PaymentController } from "./PaymentController";
 export { LocationController } from "./LocationController";
 export { AiController } from "./AiController";
+export { AreaController } from "./AreaController";
+export { CategoryController } from "./CategoryController";
+export { PriceRangeController } from "./PriceController";

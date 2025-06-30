@@ -20,17 +20,46 @@ export class LocationController {
   async getDistricts(req: Request, res: Response) {
     try {
       const { provinceCode } = req.params;
-      const province = await LocationModel.findOne({
-        code: Number(provinceCode),
-      });
-      if (!province) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Province not found" });
+
+      // Try to find by code first (if it's numeric)
+      let province;
+      if (!isNaN(Number(provinceCode))) {
+        province = await LocationModel.findOne({ code: Number(provinceCode) });
       }
-      res.json({ success: true, data: province.districts || [] });
+
+      // If not found or not numeric, try to find by slug
+      if (!province) {
+        province = await LocationModel.findOne({
+          $or: [{ slug: provinceCode }, { codename: provinceCode }],
+        });
+      }
+
+      if (!province) {
+        return res.status(404).json({
+          success: false,
+          message: "Province not found",
+        });
+      }
+
+      // Map district data to a simpler format
+      const districts = province.districts.map((district: any) => ({
+        name: district.name,
+        code: district.code,
+        codename: district.codename,
+        division_type: district.division_type,
+        short_codename: district.short_codename,
+      }));
+
+      res.json({
+        success: true,
+        data: districts,
+      });
     } catch (error) {
-      res.status(500).json({ success: false, message: "Server error" });
+      console.error("Error getting districts:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
     }
   }
 

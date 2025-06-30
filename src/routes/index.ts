@@ -7,6 +7,9 @@ import {
   PaymentController,
   LocationController,
   AiController,
+  AreaController,
+  CategoryController,
+  PriceRangeController,
 } from "../controllers";
 import { authenticateUser } from "../middleware";
 import { uploadS3 } from "../utils/s3Upload";
@@ -19,6 +22,9 @@ const favoriteController = new FavoriteController();
 const paymentController = new PaymentController();
 const locationController = new LocationController();
 const aiController = new AiController();
+const areaController = new AreaController();
+const categoryController = new CategoryController();
+const priceRangeController = new PriceRangeController();
 
 export function setRoutes(app: Express) {
   // Trang chủ
@@ -58,23 +64,32 @@ export function setRoutes(app: Express) {
   const postRouter = Router();
   app.use("/api/posts", postRouter);
   postRouter.get("/", postController.getPosts.bind(postController));
+
   postRouter.get(
     "/my",
     authenticateUser,
     postController.getMyPosts.bind(postController)
   );
-  postRouter.get("/:postId", postController.getPostById.bind(postController));
+  //lấy bài viết theo apifiler
+  postRouter.get("/search", postController.searchPosts.bind(postController));
 
   postRouter.get(
     "/user/:userId",
     authenticateUser,
     postController.getPostsByUser.bind(postController)
   );
+  postRouter.get("/:postId", postController.getPostById.bind(postController));
+
   postRouter.post(
     "/",
     authenticateUser,
     uploadS3.array("images", 20),
     postController.createPost.bind(postController)
+  );
+  // chỉnh sửa trạng thái bài viết
+  postRouter.patch(
+    "/:postId/status",
+    postController.updatePostStatus.bind(postController)
   );
 
   // Favorite
@@ -170,5 +185,44 @@ export function setRoutes(app: Express) {
     "/generate-description",
     authenticateUser,
     aiController.generateDescription.bind(aiController)
+  );
+
+  // Area
+  const areaRouter = Router();
+  app.use("/api/areas", areaRouter);
+  areaRouter.get("/", areaController.getAreas.bind(areaController));
+  areaRouter.get("/:slug", areaController.getAreaBySlug.bind(areaController));
+
+  // Category
+  const categoryRouter = Router();
+  app.use("/api/categories", categoryRouter);
+  categoryRouter.get(
+    "/",
+    categoryController.getCategories.bind(categoryController)
+  );
+  // lấy danh mục theo isProject
+  categoryRouter.get(
+    "/isProject/:isProject",
+    categoryController.getCategoryByIsProject.bind(categoryController)
+  );
+  categoryRouter.get(
+    "/:slug",
+    categoryController.getCategoryBySlug.bind(categoryController)
+  );
+
+  // Price Range
+  const priceRangeRouter = Router();
+  app.use("/api/price-ranges", priceRangeRouter);
+  priceRangeRouter.get(
+    "/",
+    priceRangeController.getPriceRanges.bind(priceRangeController)
+  );
+  priceRangeRouter.get(
+    "/type/:type",
+    priceRangeController.getPriceRangeByType.bind(priceRangeController)
+  );
+  priceRangeRouter.get(
+    "/:slug",
+    priceRangeController.getPriceRangeBySlug.bind(priceRangeController)
   );
 }

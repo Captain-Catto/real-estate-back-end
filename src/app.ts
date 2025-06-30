@@ -6,6 +6,7 @@ import cors from "cors";
 import path from "path";
 import { setRoutes } from "./routes/index";
 import { requestLogger } from "./middleware/index";
+
 dotenv.config();
 
 const app = express();

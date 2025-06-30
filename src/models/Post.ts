@@ -16,7 +16,6 @@ export interface IPost extends Document {
   author: { type: mongoose.Schema.Types.ObjectId; ref: "User" };
   images: [String]; // <-- array string
   area: String;
-  currency: String;
   legalDocs: String;
   furniture: String;
   bedrooms: Number;
@@ -26,9 +25,6 @@ export interface IPost extends Document {
   balconyDirection: String;
   roadWidth: String;
   frontWidth: String;
-  contactName: String;
-  email: String;
-  phone: String;
   packageId: String;
   packageDuration: Number;
   status: String; // active, inactive, sold
@@ -54,6 +50,7 @@ const postSchema = new Schema<IPost>(
       trim: true,
       maxlength: 1500,
     },
+
     price: {
       type: Number,
       min: 0,
@@ -69,6 +66,70 @@ const postSchema = new Schema<IPost>(
         type: String,
       },
     ],
+    area: {
+      type: Number,
+      trim: true,
+    },
+    legalDocs: {
+      type: String,
+      trim: true,
+    },
+    furniture: {
+      type: String,
+      trim: true,
+    },
+    bedrooms: {
+      type: Number,
+      min: 0,
+    },
+    bathrooms: {
+      type: Number,
+      min: 0,
+    },
+    floors: {
+      type: Number,
+      min: 0,
+    },
+    houseDirection: {
+      type: String,
+      trim: true,
+      enum: [
+        "Đông",
+        "Tây",
+        "Nam",
+        "Bắc",
+        "Đông Nam",
+        "Tây Nam",
+        "Đông Bắc",
+        "Tây Bắc",
+      ],
+    },
+    balconyDirection: {
+      type: String,
+      trim: true,
+      enum: [
+        "Đông",
+        "Tây",
+        "Nam",
+        "Bắc",
+        "Đông Nam",
+        "Tây Nam",
+        "Đông Bắc",
+        "Tây Bắc",
+      ],
+    },
+    roadWidth: {
+      type: String,
+      trim: true,
+    },
+    frontWidth: {
+      type: String,
+      trim: true,
+    },
+    packageId: {
+      type: String,
+      trim: true,
+    },
     category: {
       type: String,
       required: true,
@@ -99,6 +160,6 @@ const postSchema = new Schema<IPost>(
 // Index for better query performance
 postSchema.index({ author: 1, createdAt: -1 });
 postSchema.index({ category: 1, status: 1 });
-postSchema.index({ title: "text", description: "text", content: "text" });
+postSchema.index({ title: "text", description: "text" });
 
 export const Post = mongoose.model<IPost>("Post", postSchema);

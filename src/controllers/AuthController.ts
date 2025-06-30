@@ -476,7 +476,7 @@ export class AuthController {
     console.log("Request headers:", req.headers);
     try {
       const userId = req.user?.userId;
-      const { username, email } = req.body;
+      const { username, email, phoneNumber } = req.body;
 
       console.log("Update profile request:", req.body);
       console.log("Authenticated user ID:", userId);
@@ -556,6 +556,32 @@ export class AuthController {
         updateFields.email = email.toLowerCase().trim();
       }
 
+      if (phoneNumber && phoneNumber !== user.phoneNumber) {
+        // Optionally: validate phone format (simple example)
+        const phoneRegex = /^[0-9\-\+\s]{8,20}$/;
+        if (!phoneRegex.test(phoneNumber)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid phone number format",
+          });
+        }
+
+        // Check if phone already exists (excluding current user)
+        const existingPhone = await User.findOne({
+          phoneNumber,
+          _id: { $ne: userId },
+        });
+
+        if (existingPhone) {
+          return res.status(400).json({
+            success: false,
+            message: "Phone number already exists",
+          });
+        }
+
+        updateFields.phoneNumber = phoneNumber.trim();
+      }
+
       // Update user
       const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
         new: true,
@@ -577,6 +603,7 @@ export class AuthController {
             id: updatedUser._id,
             username: updatedUser.username,
             email: updatedUser.email,
+            phoneNumber: updatedUser.phoneNumber,
             avatar: updatedUser.avatar,
             role: updatedUser.role,
             createdAt: updatedUser.createdAt,

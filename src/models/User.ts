@@ -5,6 +5,7 @@ export interface IUser extends Document {
   username: string;
   email: string;
   password: string;
+  phoneNumber?: Number;
   refreshTokens: string[];
   avatar?: string;
   role: "user" | "admin" | "employee";
@@ -29,6 +30,10 @@ const userSchema = new Schema<IUser>(
       unique: true,
       lowercase: true,
       trim: true,
+    },
+    phoneNumber: {
+      type: Number,
+      sparse: true, // null hoặc undefined không tạo index
     },
     password: {
       type: String,
