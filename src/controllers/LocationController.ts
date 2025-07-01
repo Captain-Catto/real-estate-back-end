@@ -16,6 +16,27 @@ export class LocationController {
     }
   }
 
+  // lấy danh sách tỉnh/thành theo slug (ví dụ: thanh_pho_ha_noi)
+  async getProvinceBySlug(req: Request, res: Response) {
+    try {
+      const { slug } = req.params;
+      const province = await LocationModel.findOne({
+        $or: [{ slug }, { codename: slug }],
+      });
+
+      if (!province) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Province not found" });
+      }
+
+      res.json({ success: true, data: province });
+    } catch (error) {
+      console.error("Error fetching province by slug:", error);
+      res.status(500).json({ success: false, message: "Server error" });
+    }
+  }
+
   // Lấy danh sách quận/huyện theo mã tỉnh
   async getDistricts(req: Request, res: Response) {
     try {

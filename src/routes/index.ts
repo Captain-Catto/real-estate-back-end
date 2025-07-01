@@ -165,6 +165,10 @@ export function setRoutes(app: Express) {
     locationController.getProvinces.bind(locationController)
   );
   locationRouter.get(
+    "/province/:slug",
+    locationController.getProvinceBySlug.bind(locationController)
+  );
+  locationRouter.get(
     "/districts/:provinceCode",
     locationController.getDistricts.bind(locationController)
   );
