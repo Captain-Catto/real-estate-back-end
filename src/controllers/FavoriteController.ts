@@ -85,6 +85,7 @@ export class FavoriteController {
     try {
       const userId = req.user?.userId;
       const { postId } = req.params;
+      console.log("Removing favorite for postId:", postId);
 
       if (!userId) {
         return res.status(401).json({

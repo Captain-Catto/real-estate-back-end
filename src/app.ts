@@ -25,7 +25,7 @@ app.use(
   cors({
     origin: "http://localhost:3000", // Chỉ định cụ thể origin
     credentials: true, // Cho phép gửi cookies
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
