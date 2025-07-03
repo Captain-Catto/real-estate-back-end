@@ -29,10 +29,8 @@ export const authenticateUser = (
   next: NextFunction
 ) => {
   console.log("=== AUTHENTICATION MIDDLEWARE ===");
-  console.log("Request headers:", req.headers);
 
   const authHeader = req.header("Authorization");
-  console.log("Authorization header:", authHeader);
 
   const token =
     authHeader && authHeader.startsWith("Bearer ")

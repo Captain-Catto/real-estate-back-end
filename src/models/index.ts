@@ -5,3 +5,4 @@ export { Payment, IPayment } from "./Payment";
 export { Category, ICategory } from "./Category";
 export { PriceRange, IPriceRange } from "./Price";
 export { Area, IArea } from "./Area";
+export { Wallet, IWallet } from "./Wallet";

@@ -57,3 +57,4 @@ export { AiController } from "./AiController";
 export { AreaController } from "./AreaController";
 export { CategoryController } from "./CategoryController";
 export { PriceRangeController } from "./PriceController";
+export { WalletController } from "./WalletController";

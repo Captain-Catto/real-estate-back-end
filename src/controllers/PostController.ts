@@ -228,7 +228,7 @@ export class PostController {
     }
   }
 
-  // Lấy danh sách bài đăng của người dùng hiện tại
+  // Lấy danh sách bài đăng của người dùng hiện tại với các tham số lọc
   async getMyPosts(req: AuthenticatedRequest, res: Response) {
     try {
       const userId = req.user?.userId;
@@ -238,11 +238,69 @@ export class PostController {
           message: "User not authenticated",
         });
       }
+
+      // Phân trang
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
       const skip = (page - 1) * limit;
 
-      const posts = await Post.find({ author: userId })
+      // Lấy các tham số lọc
+      const { status, type, search, dateRange, startDate, endDate } = req.query;
+
+      // Xây dựng bộ lọc
+      const filter: any = { author: userId };
+
+      // Lọc theo trạng thái
+      if (status && status !== "all") {
+        filter.status = status;
+      }
+
+      // Lọc theo loại tin (bán/cho thuê)
+      if (type && type !== "all") {
+        filter.type = type;
+      }
+
+      // Lọc theo từ khóa tìm kiếm (title hoặc ID)
+      if (search) {
+        if (mongoose.Types.ObjectId.isValid(search as string)) {
+          // Nếu search là ID hợp lệ, thêm điều kiện tìm theo ID
+          filter.$or = [
+            { title: { $regex: search, $options: "i" } }, // Case insensitive search
+            { _id: new mongoose.Types.ObjectId(search as string) },
+          ];
+        } else {
+          // Nếu không phải ID, chỉ tìm theo tiêu đề
+          filter.$or = [{ title: { $regex: search, $options: "i" } }];
+        }
+      }
+
+      // Lọc theo khoảng thời gian
+      if (dateRange || (startDate && endDate)) {
+        const now = new Date();
+
+        if (dateRange === "7") {
+          // 7 ngày gần đây
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(now.getDate() - 7);
+          filter.createdAt = { $gte: sevenDaysAgo };
+        } else if (dateRange === "30") {
+          // 30 ngày gần đây
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(now.getDate() - 30);
+          filter.createdAt = { $gte: thirtyDaysAgo };
+        } else if (dateRange === "custom" && startDate && endDate) {
+          // Khoảng thời gian tùy chọn
+          const startDateTime = new Date(startDate as string);
+          const endDateTime = new Date(endDate as string);
+          // Đặt thời gian kết thúc là cuối ngày
+          endDateTime.setHours(23, 59, 59, 999);
+          filter.createdAt = { $gte: startDateTime, $lte: endDateTime };
+        }
+      }
+
+      console.log("Filter for getMyPosts:", filter);
+
+      const posts = await Post.find(filter)
         .populate("author", "username email avatar")
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -285,7 +343,7 @@ export class PostController {
         })
       );
 
-      const totalPosts = await Post.countDocuments({ author: userId });
+      const totalPosts = await Post.countDocuments(filter);
 
       res.json({
         success: true,
@@ -296,6 +354,15 @@ export class PostController {
             totalPages: Math.ceil(totalPosts / limit),
             totalItems: totalPosts,
             itemsPerPage: limit,
+          },
+          filters: {
+            // Trả về thông tin bộ lọc để frontend có thể hiển thị
+            status: status || "all",
+            type: type || "all",
+            search: search || "",
+            dateRange: dateRange || "",
+            startDate: startDate || "",
+            endDate: endDate || "",
           },
         },
       });

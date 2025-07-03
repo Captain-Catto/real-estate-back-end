@@ -10,6 +10,7 @@ import {
   AreaController,
   CategoryController,
   PriceRangeController,
+  WalletController, // New controller
 } from "../controllers";
 import { authenticateUser } from "../middleware";
 import { uploadS3 } from "../utils/s3Upload";
@@ -25,6 +26,7 @@ const aiController = new AiController();
 const areaController = new AreaController();
 const categoryController = new CategoryController();
 const priceRangeController = new PriceRangeController();
+const walletController = new WalletController(); // New controller instance
 
 export function setRoutes(app: Express) {
   // Trang chủ
@@ -137,7 +139,7 @@ export function setRoutes(app: Express) {
     paymentController.getPaymentHistory.bind(paymentController)
   );
   paymentRouter.get(
-    "/:orderId",
+    "/details/:orderId",
     authenticateUser,
     paymentController.getPaymentDetails.bind(paymentController)
   );
@@ -151,9 +153,26 @@ export function setRoutes(app: Express) {
     "/vnpay/ipn",
     paymentController.processVNPayIPN.bind(paymentController)
   );
+
+  // Kiểm tra và cập nhật trạng thái thanh toán
   paymentRouter.get(
     "/check-status/:orderId",
+    authenticateUser,
     paymentController.checkPaymentStatus.bind(paymentController)
+  );
+
+  // Thêm route mới để cập nhật trạng thái từ client-side
+  paymentRouter.post(
+    "/update-status/:orderId",
+    authenticateUser,
+    paymentController.updatePaymentStatus.bind(paymentController)
+  );
+
+  // Thêm route mới để lấy thông tin ví người dùng
+  paymentRouter.get(
+    "/wallet-info",
+    authenticateUser,
+    paymentController.getUserWalletInfo.bind(paymentController)
   );
 
   // Location
@@ -228,5 +247,47 @@ export function setRoutes(app: Express) {
   priceRangeRouter.get(
     "/:slug",
     priceRangeController.getPriceRangeBySlug.bind(priceRangeController)
+  );
+
+  // Wallet routes - add new routes for wallet
+  const walletRouter = Router();
+  app.use("/api/wallet", walletRouter);
+
+  walletRouter.get(
+    "/info",
+    authenticateUser,
+    walletController.getWalletInfo.bind(walletController)
+  );
+
+  walletRouter.post(
+    "/process-payment",
+    authenticateUser,
+    walletController.processPaymentUpdate.bind(walletController)
+  );
+
+  walletRouter.get(
+    "/transactions",
+    authenticateUser,
+    walletController.getTransactionHistory.bind(walletController)
+  );
+
+  walletRouter.post(
+    "/sync",
+    authenticateUser,
+    walletController.syncWalletWithPayments.bind(walletController)
+  );
+
+  // Admin-only route
+  walletRouter.post(
+    "/adjust",
+    authenticateUser,
+    walletController.adjustWalletBalance.bind(walletController)
+  );
+
+  // Post payment route
+  walletRouter.post(
+    "/deduct-for-post",
+    authenticateUser,
+    walletController.deductForPostPayment.bind(walletController)
   );
 }

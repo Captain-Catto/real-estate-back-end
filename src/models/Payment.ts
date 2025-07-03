@@ -6,7 +6,7 @@ export interface IPayment extends Document {
   orderId: string;
   amount: number;
   currency: string;
-  paymentMethod: "vnpay" | "momo" | "paypal" | "bank_transfer";
+  paymentMethod: "vnpay" | "momo" | "paypal" | "bank_transfer" | "wallet";
   status: "pending" | "completed" | "failed" | "cancelled";
   transactionId?: string;
   vnpayTransactionRef?: string;
@@ -51,7 +51,7 @@ const paymentSchema = new Schema<IPayment>(
     },
     paymentMethod: {
       type: String,
-      enum: ["vnpay", "momo", "paypal", "bank_transfer"],
+      enum: ["vnpay", "momo", "paypal", "bank_transfer", "wallet"],
       required: true,
     },
     status: {
