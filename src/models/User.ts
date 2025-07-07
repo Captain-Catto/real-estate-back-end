@@ -5,10 +5,11 @@ export interface IUser extends Document {
   username: string;
   email: string;
   password: string;
-  phoneNumber?: Number;
+  phoneNumber?: string;
   refreshTokens: string[];
   avatar?: string;
   role: "user" | "admin" | "employee";
+  status: "active" | "inactive" | "banned";
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -32,7 +33,7 @@ const userSchema = new Schema<IUser>(
       trim: true,
     },
     phoneNumber: {
-      type: Number,
+      type: String,
       sparse: true, // null hoặc undefined không tạo index
     },
     password: {
@@ -53,6 +54,11 @@ const userSchema = new Schema<IUser>(
       type: String,
       enum: ["user", "admin", "employee"],
       default: "user",
+    },
+    status: {
+      type: String,
+      enum: ["active", "inactive", "banned"],
+      default: "active",
     },
   },
   {

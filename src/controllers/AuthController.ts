@@ -377,6 +377,7 @@ export class AuthController {
             id: user._id,
             username: user.username,
             email: user.email,
+            phoneNumber: user.phoneNumber,
             avatar: user.avatar,
             role: user.role,
             createdAt: user.createdAt,
@@ -557,9 +558,20 @@ export class AuthController {
       }
 
       if (phoneNumber && phoneNumber !== user.phoneNumber) {
+        // Chuyển đổi phoneNumber thành string trước khi xử lý
+        const phoneStr = String(phoneNumber).trim();
+
+        // Kiểm tra nếu chuỗi rỗng sau khi trim
+        if (!phoneStr) {
+          return res.status(400).json({
+            success: false,
+            message: "Phone number cannot be empty",
+          });
+        }
+
         // Optionally: validate phone format (simple example)
         const phoneRegex = /^[0-9\-\+\s]{8,20}$/;
-        if (!phoneRegex.test(phoneNumber)) {
+        if (!phoneRegex.test(phoneStr)) {
           return res.status(400).json({
             success: false,
             message: "Invalid phone number format",
@@ -568,7 +580,7 @@ export class AuthController {
 
         // Check if phone already exists (excluding current user)
         const existingPhone = await User.findOne({
-          phoneNumber,
+          phoneNumber: phoneStr,
           _id: { $ne: userId },
         });
 
@@ -579,15 +591,14 @@ export class AuthController {
           });
         }
 
-        updateFields.phoneNumber = phoneNumber.trim();
+        updateFields.phoneNumber = phoneStr;
       }
-
       // Update user
       const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
         new: true,
         runValidators: true,
       }).select("-password -refreshTokens");
-
+      console.log("Updated user:", updatedUser);
       if (!updatedUser) {
         return res.status(404).json({
           success: false,

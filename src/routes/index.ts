@@ -11,6 +11,7 @@ import {
   CategoryController,
   PriceRangeController,
   WalletController, // New controller
+  AdminController, // Add admin controller
 } from "../controllers";
 import { authenticateUser } from "../middleware";
 import { uploadS3 } from "../utils/s3Upload";
@@ -27,6 +28,7 @@ const areaController = new AreaController();
 const categoryController = new CategoryController();
 const priceRangeController = new PriceRangeController();
 const walletController = new WalletController(); // New controller instance
+const adminController = AdminController; // Use the AdminController object directly
 
 export function setRoutes(app: Express) {
   // Trang chủ
@@ -289,5 +291,81 @@ export function setRoutes(app: Express) {
     "/deduct-for-post",
     authenticateUser,
     walletController.deductForPostPayment.bind(walletController)
+  );
+
+  // Admin routes
+  const adminRouter = Router();
+  app.use("/api/admin", adminRouter);
+
+  // Admin statistics routes
+  adminRouter.get("/stats", authenticateUser, AdminController.getAdminStats);
+  adminRouter.get(
+    "/recent-activities",
+    authenticateUser,
+    AdminController.getRecentActivities
+  );
+  adminRouter.get("/top-posts", authenticateUser, AdminController.getTopPosts);
+
+  // Admin posts management routes
+  adminRouter.get("/posts", authenticateUser, AdminController.getAdminPosts);
+  adminRouter.get(
+    "/posts/stats",
+    authenticateUser,
+    AdminController.getAdminPostsStats
+  );
+  adminRouter.get(
+    "/posts/:id",
+    authenticateUser,
+    AdminController.getAdminPostById
+  );
+  adminRouter.put(
+    "/posts/:id/approve",
+    authenticateUser,
+    AdminController.approvePost
+  );
+  adminRouter.put(
+    "/posts/:id/reject",
+    authenticateUser,
+    AdminController.rejectPost
+  );
+  adminRouter.delete(
+    "/posts/:id",
+    authenticateUser,
+    AdminController.deleteAdminPost
+  );
+
+  // Admin user management routes
+  adminRouter.get("/users", authenticateUser, AdminController.getUsers);
+  adminRouter.get(
+    "/user-stats",
+    authenticateUser,
+    AdminController.getUserStats
+  );
+  adminRouter.get("/users/:id", authenticateUser, AdminController.getUserById);
+  adminRouter.get(
+    "/users/:id/posts",
+    authenticateUser,
+    AdminController.getUserPosts
+  );
+  adminRouter.get(
+    "/users/:id/payments",
+    authenticateUser,
+    AdminController.getUserPayments
+  );
+  adminRouter.get(
+    "/users/:id/logs",
+    authenticateUser,
+    AdminController.getUserLogs
+  );
+  adminRouter.put("/users/:id", authenticateUser, AdminController.updateUser);
+  adminRouter.patch(
+    "/users/:id/status",
+    authenticateUser,
+    AdminController.updateUserStatus
+  );
+  adminRouter.delete(
+    "/users/:id",
+    authenticateUser,
+    AdminController.deleteUser
   );
 }

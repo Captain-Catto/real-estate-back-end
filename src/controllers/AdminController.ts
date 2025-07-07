@@ -1,0 +1,1135 @@
+import { Request, Response } from "express";
+import { Post, IPost } from "../models/Post";
+import { User, IUser } from "../models/User";
+import { Payment, IPayment } from "../models/Payment";
+import UserLog from "../models/UserLog";
+import mongoose from "mongoose";
+import { AuthenticatedRequest } from "../middleware";
+
+interface AdminStats {
+  totalPosts: number;
+  totalUsers: number;
+  newUsersThisMonth: number;
+  postsThisMonth: number;
+  postsLastMonth: number;
+  monthlyRevenue: number;
+  pendingPosts: number;
+  todayPostViews: number;
+  approvedPosts: number;
+}
+
+interface ActivityItem {
+  id: string;
+  type: string;
+  message: string;
+  time: Date;
+  status: string;
+  relatedId: mongoose.Types.ObjectId;
+}
+
+export const AdminController = {
+  // GET /api/admin/stats
+  getAdminStats: async (req: Request, res: Response) => {
+    try {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfLastMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() - 1,
+        1
+      );
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+      const startOfToday = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      );
+
+      // Total posts
+      const totalPosts = await Post.countDocuments();
+
+      // Total users
+      const totalUsers = await User.countDocuments();
+
+      // New users this month
+      const newUsersThisMonth = await User.countDocuments({
+        createdAt: { $gte: startOfMonth },
+      });
+
+      // Posts this month
+      const postsThisMonth = await Post.countDocuments({
+        createdAt: { $gte: startOfMonth },
+      });
+
+      // Posts last month
+      const postsLastMonth = await Post.countDocuments({
+        createdAt: {
+          $gte: startOfLastMonth,
+          $lte: endOfLastMonth,
+        },
+      });
+
+      // Monthly revenue (total payments this month)
+      const monthlyPayments = await Payment.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: startOfMonth },
+            status: "completed",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalAmount: { $sum: "$amount" },
+          },
+        },
+      ]);
+      const monthlyRevenue =
+        monthlyPayments.length > 0 ? monthlyPayments[0].totalAmount : 0;
+
+      // Pending posts
+      const pendingPosts = await Post.countDocuments({
+        status: "pending",
+      });
+
+      // Today's post views (sum of all views for posts updated today)
+      const todayPostViewsResult = await Post.aggregate([
+        {
+          $match: {
+            updatedAt: { $gte: startOfToday },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalViews: { $sum: "$views" },
+          },
+        },
+      ]);
+      const todayPostViews =
+        todayPostViewsResult.length > 0
+          ? todayPostViewsResult[0].totalViews
+          : 0;
+
+      // Approved posts
+      const approvedPosts = await Post.countDocuments({
+        status: "approved",
+      });
+
+      const stats: AdminStats = {
+        totalPosts,
+        totalUsers,
+        newUsersThisMonth,
+        postsThisMonth,
+        postsLastMonth,
+        monthlyRevenue,
+        pendingPosts,
+        todayPostViews,
+        approvedPosts,
+      };
+
+      res.json({
+        success: true,
+        data: stats,
+      });
+    } catch (error) {
+      console.error("Error fetching admin stats:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy thống kê admin",
+      });
+    }
+  },
+
+  // GET /api/admin/recent-activities
+  getRecentActivities: async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+
+      // Get recent posts (last 24 hours)
+      const recentPosts = await Post.find({
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      })
+        .populate("author", "username email")
+        .sort({ createdAt: -1 })
+        .limit(limit);
+
+      // Get recent users (last 24 hours)
+      const recentUsers = await User.find({
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      })
+        .sort({ createdAt: -1 })
+        .limit(limit);
+
+      // Get recent payments (last 24 hours)
+      const recentPayments = await Payment.find({
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      })
+        .populate("userId", "username email")
+        .sort({ createdAt: -1 })
+        .limit(limit);
+
+      // Combine and format activities
+      const activities: ActivityItem[] = [];
+
+      // Add post activities
+      recentPosts.forEach((post) => {
+        const populatedPost = post as any; // Type assertion for populated fields
+        activities.push({
+          id: `post_${post._id}`,
+          type: "post_submitted",
+          message: `${
+            populatedPost.author?.username || "User"
+          } đã gửi tin đăng mới: ${post.title}`,
+          time: post.createdAt,
+          status: post.status as string,
+          relatedId: post._id,
+        });
+      });
+
+      // Add user activities
+      recentUsers.forEach((user) => {
+        activities.push({
+          id: `user_${user._id}`,
+          type: "user_registered",
+          message: `Người dùng mới: ${user.username}`,
+          time: user.createdAt,
+          status: "success",
+          relatedId: user._id,
+        });
+      });
+
+      // Add payment activities
+      recentPayments.forEach((payment) => {
+        const populatedPayment = payment as any; // Type assertion for populated fields
+        activities.push({
+          id: `payment_${payment._id}`,
+          type: "payment_received",
+          message: `Thanh toán ${payment.amount.toLocaleString()} VNĐ từ ${
+            populatedPayment.userId?.username || "User"
+          }`,
+          time: payment.createdAt,
+          status: payment.status,
+          relatedId: payment._id,
+        });
+      });
+
+      // Sort by time and limit
+      activities.sort(
+        (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()
+      );
+      const limitedActivities = activities.slice(0, limit);
+
+      res.json({
+        success: true,
+        data: limitedActivities,
+      });
+    } catch (error) {
+      console.error("Error fetching recent activities:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy hoạt động gần đây",
+      });
+    }
+  },
+
+  // GET /api/admin/top-posts
+  getTopPosts: async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+
+      const topPosts = await Post.find()
+        .populate("author", "username email")
+        .sort({ views: -1 })
+        .limit(limit)
+        .select("title views status author createdAt");
+
+      const formattedPosts = topPosts.map((post) => {
+        const populatedPost = post as any; // Type assertion for populated fields
+        return {
+          id: post._id,
+          title: post.title,
+          views: post.views || 0,
+          status: post.status,
+          author: populatedPost.author?.username || "Unknown",
+          createdAt: post.createdAt,
+        };
+      });
+
+      res.json({
+        success: true,
+        data: formattedPosts,
+      });
+    } catch (error) {
+      console.error("Error fetching top posts:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy bài đăng phổ biến",
+      });
+    }
+  },
+
+  // GET /api/admin/users - Get all users with filters
+  getUsers: async (req: Request, res: Response) => {
+    try {
+      const {
+        search = "",
+        role = "",
+        status = "",
+        page = 1,
+        limit = 20,
+      } = req.query;
+
+      const query: any = {};
+
+      // Apply search filter
+      if (search) {
+        query.$or = [
+          { username: { $regex: search, $options: "i" } },
+          { email: { $regex: search, $options: "i" } },
+          { phoneNumber: { $regex: search, $options: "i" } },
+        ];
+      }
+
+      // Apply role filter
+      if (role && role !== "all") {
+        query.role = role;
+      }
+
+      // Apply status filter (you'll need to add status field to User model)
+      if (status && status !== "all") {
+        query.status = status;
+      }
+
+      const pageNum = parseInt(page as string);
+      const limitNum = parseInt(limit as string);
+      const skip = (pageNum - 1) * limitNum;
+
+      // Get users with pagination
+      const users = await User.find(query)
+        .select("-password -refreshTokens")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum);
+
+      // Get total count for pagination
+      const totalUsers = await User.countDocuments(query);
+
+      // Get additional stats for each user (posts, transactions, spending)
+      const usersWithStats = await Promise.all(
+        users.map(async (user) => {
+          const totalPosts = await Post.countDocuments({ author: user._id });
+          const totalTransactions = await Payment.countDocuments({
+            userId: user._id,
+          });
+
+          const spentResult = await Payment.aggregate([
+            { $match: { userId: user._id, status: "completed" } },
+            { $group: { _id: null, totalSpent: { $sum: "$amount" } } },
+          ]);
+          const totalSpent =
+            spentResult.length > 0 ? spentResult[0].totalSpent : 0;
+
+          return {
+            ...user.toObject(),
+            totalPosts,
+            totalTransactions,
+            totalSpent,
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: {
+          users: usersWithStats,
+          pagination: {
+            currentPage: pageNum,
+            totalPages: Math.ceil(totalUsers / limitNum),
+            totalItems: totalUsers,
+            itemsPerPage: limitNum,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy danh sách người dùng",
+      });
+    }
+  },
+
+  // GET /api/admin/user-stats - Get user statistics
+  getUserStats: async (req: Request, res: Response) => {
+    try {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const totalUsers = await User.countDocuments();
+      const activeUsers = await User.countDocuments({ status: "active" });
+      const verifiedUsers = await User.countDocuments({ emailVerified: true });
+      const newUsersThisMonth = await User.countDocuments({
+        createdAt: { $gte: startOfMonth },
+      });
+
+      res.json({
+        success: true,
+        data: {
+          totalUsers,
+          activeUsers,
+          verifiedUsers,
+          newUsersThisMonth,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching user stats:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy thống kê người dùng",
+      });
+    }
+  },
+
+  // GET /api/admin/users/:id - Get user by ID
+  getUserById: async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const user = await User.findById(id).select("-password -refreshTokens");
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      // Get additional stats
+      const totalPosts = await Post.countDocuments({ author: user._id });
+      const totalTransactions = await Payment.countDocuments({
+        userId: user._id,
+      });
+
+      const spentResult = await Payment.aggregate([
+        { $match: { userId: user._id, status: "completed" } },
+        { $group: { _id: null, totalSpent: { $sum: "$amount" } } },
+      ]);
+      const totalSpent = spentResult.length > 0 ? spentResult[0].totalSpent : 0;
+
+      res.json({
+        success: true,
+        data: {
+          user: {
+            ...user.toObject(),
+            totalPosts,
+            totalTransactions,
+            totalSpent,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching user by ID:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy thông tin người dùng",
+      });
+    }
+  },
+
+  // PATCH /api/admin/users/:id/status - Update user status
+  updateUserStatus: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      const currentUserId = req.user?.userId;
+
+      console.log("=== UPDATE USER STATUS ===");
+      console.log("User ID from params:", id);
+      console.log("Status from body:", status);
+      console.log("Current user ID:", currentUserId);
+      console.log("req.params:", req.params);
+      console.log("req.body:", req.body);
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: "ID người dùng không được cung cấp",
+        });
+      }
+
+      if (!["active", "inactive", "banned"].includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: "Trạng thái không hợp lệ",
+        });
+      }
+
+      const user = await User.findById(id);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      // Don't allow changing admin status
+      if (user.role === "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Không thể thay đổi trạng thái của quản trị viên",
+        });
+      }
+
+      // Save old status for logging
+      const oldStatus = user.status;
+
+      user.status = status;
+      await user.save();
+
+      // Create log entry
+      if (currentUserId) {
+        // Get client IP and User Agent
+        const clientIP =
+          req.ip ||
+          req.connection.remoteAddress ||
+          req.headers["x-forwarded-for"] ||
+          "Unknown";
+        const userAgent = req.headers["user-agent"] || "Unknown";
+
+        await UserLog.create({
+          userId: user._id,
+          changedBy: currentUserId,
+          action: "statusChanged",
+          changes: {
+            status: {
+              from: oldStatus,
+              to: status,
+            },
+          },
+          details: `Trạng thái người dùng đã được thay đổi từ ${oldStatus} thành ${status}`,
+          ipAddress: clientIP,
+          userAgent: userAgent,
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Cập nhật trạng thái người dùng thành công",
+      });
+    } catch (error) {
+      console.error("Error updating user status:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi cập nhật trạng thái người dùng",
+      });
+    }
+  },
+
+  // DELETE /api/admin/users/:id - Delete user
+  deleteUser: async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const user = await User.findById(id);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      // Don't allow deleting admin users
+      if (user.role === "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Không thể xóa tài khoản quản trị viên",
+        });
+      }
+
+      // Delete user's posts first
+      await Post.deleteMany({ author: user._id });
+
+      // Delete user
+      await User.findByIdAndDelete(id);
+
+      res.json({
+        success: true,
+        message: "Xóa người dùng thành công",
+      });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi xóa người dùng",
+      });
+    }
+  },
+
+  // PUT /api/admin/users/:id - Update user
+  updateUser: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { username, email, phoneNumber, role, status } = req.body;
+      const currentUserId = req.user?.userId;
+
+      const user = await User.findById(id);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      // Check if email/username already exists
+      if (email && email !== user.email) {
+        const existingEmail = await User.findOne({ email, _id: { $ne: id } });
+        if (existingEmail) {
+          return res.status(400).json({
+            success: false,
+            message: "Email đã tồn tại",
+          });
+        }
+      }
+
+      if (username && username !== user.username) {
+        const existingUsername = await User.findOne({
+          username,
+          _id: { $ne: id },
+        });
+        if (existingUsername) {
+          return res.status(400).json({
+            success: false,
+            message: "Tên người dùng đã tồn tại",
+          });
+        }
+      }
+
+      // Store old values for logging
+      const oldValues = {
+        username: user.username,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        status: user.status,
+      };
+
+      // Update user
+      const updateData: any = {};
+      if (username) updateData.username = username;
+      if (email) updateData.email = email;
+      if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+      if (role && user.role !== "admin") updateData.role = role; // Don't allow changing admin role
+      if (status) updateData.status = status;
+
+      const updatedUser = await User.findByIdAndUpdate(id, updateData, {
+        new: true,
+      }).select("-password -refreshTokens");
+
+      // Create log entry for changes
+      if (currentUserId && updatedUser) {
+        const changes: Record<string, { from: any; to: any }> = {};
+
+        if (username && username !== oldValues.username) {
+          changes.username = { from: oldValues.username, to: username };
+        }
+        if (email && email !== oldValues.email) {
+          changes.email = { from: oldValues.email, to: email };
+        }
+        if (
+          phoneNumber !== undefined &&
+          phoneNumber !== oldValues.phoneNumber
+        ) {
+          changes.phoneNumber = {
+            from: oldValues.phoneNumber,
+            to: phoneNumber,
+          };
+        }
+        if (role && role !== oldValues.role && user.role !== "admin") {
+          changes.role = { from: oldValues.role, to: role };
+        }
+        if (status && status !== oldValues.status) {
+          changes.status = { from: oldValues.status, to: status };
+        }
+
+        if (Object.keys(changes).length > 0) {
+          // Get client IP and User Agent
+          const clientIP =
+            req.ip ||
+            req.connection.remoteAddress ||
+            req.headers["x-forwarded-for"] ||
+            "Unknown";
+          const userAgent = req.headers["user-agent"] || "Unknown";
+
+          await UserLog.create({
+            userId: user._id,
+            changedBy: currentUserId,
+            action: "updated",
+            changes,
+            details: `Thông tin người dùng đã được cập nhật: ${Object.keys(
+              changes
+            ).join(", ")}`,
+            ipAddress: clientIP,
+            userAgent: userAgent,
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        message: "Cập nhật thông tin người dùng thành công",
+        data: { user: updatedUser },
+      });
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi cập nhật thông tin người dùng",
+      });
+    }
+  },
+
+  // GET /api/admin/users/:id/posts - Get user's posts
+  getUserPosts: async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const status = req.query.status as string;
+      const type = req.query.type as string;
+
+      // Check if user exists
+      const user = await User.findById(id);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      // Build query
+      const query: any = { author: id };
+      if (status && status !== "all") {
+        query.status = status;
+      }
+      if (type && type !== "all") {
+        query.type = type;
+      }
+
+      const skip = (page - 1) * limit;
+
+      // Get posts with pagination
+      const posts = await Post.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("author", "username email")
+        .select(
+          "title type category location price area status views createdAt updatedAt images"
+        );
+
+      const total = await Post.countDocuments(query);
+      const totalPages = Math.ceil(total / limit);
+
+      res.json({
+        success: true,
+        data: {
+          posts,
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalItems: total,
+            itemsPerPage: limit,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching user posts:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy danh sách tin đăng",
+      });
+    }
+  },
+
+  // GET /api/admin/users/:id/payments - Get user's payments
+  getUserPayments: async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const status = req.query.status as string;
+
+      // Check if user exists
+      const user = await User.findById(id);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      // Build query
+      const query: any = { userId: id };
+      if (status && status !== "all") {
+        query.status = status;
+      }
+
+      const skip = (page - 1) * limit;
+
+      // Get payments with pagination
+      const payments = await Payment.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("postId", "title type")
+        .select(
+          "orderId amount currency paymentMethod status description createdAt completedAt postId"
+        );
+
+      const total = await Payment.countDocuments(query);
+      const totalPages = Math.ceil(total / limit);
+
+      res.json({
+        success: true,
+        data: {
+          payments,
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalItems: total,
+            itemsPerPage: limit,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching user payments:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy lịch sử giao dịch",
+      });
+    }
+  },
+
+  // GET /api/admin/users/:id/logs - Get user logs
+  getUserLogs: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+
+      // Check if user exists
+      const user = await User.findById(id);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      const skip = (page - 1) * limit;
+
+      // Get logs with pagination
+      const logs = await UserLog.find({ userId: id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("changedBy", "username email role")
+        .populate("userId", "username email");
+
+      const total = await UserLog.countDocuments({ userId: id });
+      const totalPages = Math.ceil(total / limit);
+
+      res.json({
+        success: true,
+        data: {
+          logs,
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalItems: total,
+            itemsPerPage: limit,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching user logs:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy lịch sử thay đổi",
+      });
+    }
+  },
+
+  // GET /api/admin/posts - Get all posts for admin with filters
+  getAdminPosts: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const skip = (page - 1) * limit;
+
+      const {
+        status,
+        type,
+        category,
+        priority,
+        search,
+        dateFrom,
+        dateTo,
+        author,
+      } = req.query;
+
+      // Build filter object
+      const filter: any = {};
+
+      if (status && status !== "all") filter.status = status;
+      if (type && type !== "all") filter.type = type;
+      if (category && category !== "all") filter.category = category;
+      if (priority && priority !== "all") filter.priority = priority;
+      if (author && mongoose.Types.ObjectId.isValid(author as string)) {
+        filter.author = author;
+      }
+
+      // Add text search if provided
+      if (search) {
+        filter.$or = [
+          { title: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+        ];
+      }
+
+      // Add date range filter
+      if (dateFrom || dateTo) {
+        filter.createdAt = {};
+        if (dateFrom) {
+          filter.createdAt.$gte = new Date(dateFrom as string);
+        }
+        if (dateTo) {
+          filter.createdAt.$lte = new Date(dateTo as string);
+        }
+      }
+
+      const posts = await Post.find(filter)
+        .populate("author", "username email avatar")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      const totalPosts = await Post.countDocuments(filter);
+
+      res.json({
+        success: true,
+        data: {
+          posts,
+          pagination: {
+            currentPage: page,
+            totalPages: Math.ceil(totalPosts / limit),
+            totalItems: totalPosts,
+            itemsPerPage: limit,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching admin posts:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy danh sách tin đăng",
+      });
+    }
+  },
+
+  // GET /api/admin/posts/stats - Get posts statistics
+  getAdminPostsStats: async (req: Request, res: Response) => {
+    try {
+      // Get total counts for each status
+      const total = await Post.countDocuments();
+      const active = await Post.countDocuments({ status: "active" });
+      const pending = await Post.countDocuments({ status: "pending" });
+      const rejected = await Post.countDocuments({ status: "rejected" });
+      const expired = await Post.countDocuments({ status: "expired" });
+
+      // Get counts for each package/priority
+      const vip = await Post.countDocuments({
+        $or: [{ package: "vip" }, { priority: "vip" }],
+      });
+      const premium = await Post.countDocuments({
+        $or: [{ package: "premium" }, { priority: "premium" }],
+      });
+      const normal = await Post.countDocuments({
+        $and: [
+          { package: { $nin: ["vip", "premium"] } },
+          { priority: { $nin: ["vip", "premium"] } },
+        ],
+      });
+
+      const stats = {
+        total,
+        active,
+        pending,
+        rejected,
+        expired,
+        vip,
+        premium,
+        normal,
+      };
+
+      res.json({
+        success: true,
+        data: stats,
+      });
+    } catch (error) {
+      console.error("Error fetching admin posts stats:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy thống kê tin đăng",
+      });
+    }
+  },
+
+  // PUT /api/admin/posts/:id/approve - Approve post
+  approvePost: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const currentUserId = req.user?.userId;
+
+      const post = await Post.findById(id);
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy tin đăng",
+        });
+      }
+
+      post.status = "active";
+      post.approvedAt = new Date();
+      post.approvedBy = currentUserId
+        ? new mongoose.Types.ObjectId(currentUserId)
+        : undefined;
+      await post.save();
+
+      res.json({
+        success: true,
+        message: "Đã duyệt tin đăng thành công",
+        data: { post },
+      });
+    } catch (error) {
+      console.error("Error approving post:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi duyệt tin đăng",
+      });
+    }
+  },
+
+  // PUT /api/admin/posts/:id/reject - Reject post
+  rejectPost: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const currentUserId = req.user?.userId;
+
+      if (!reason) {
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng cung cấp lý do từ chối",
+        });
+      }
+
+      const post = await Post.findById(id);
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy tin đăng",
+        });
+      }
+
+      post.status = "rejected";
+      post.rejectedAt = new Date();
+      post.rejectedBy = currentUserId
+        ? new mongoose.Types.ObjectId(currentUserId)
+        : undefined;
+      post.rejectedReason = reason;
+      await post.save();
+
+      res.json({
+        success: true,
+        message: "Đã từ chối tin đăng",
+        data: { post },
+      });
+    } catch (error) {
+      console.error("Error rejecting post:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi từ chối tin đăng",
+      });
+    }
+  },
+
+  // DELETE /api/admin/posts/:id - Delete post
+  deleteAdminPost: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const post = await Post.findById(id);
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy tin đăng",
+        });
+      }
+
+      await Post.findByIdAndDelete(id);
+
+      res.json({
+        success: true,
+        message: "Đã xóa tin đăng thành công",
+      });
+    } catch (error) {
+      console.error("Error deleting post:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi xóa tin đăng",
+      });
+    }
+  },
+
+  // GET /api/admin/posts/:id - Get single post by ID for admin
+  getAdminPostById: async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "ID tin đăng không hợp lệ",
+        });
+      }
+
+      const post = await Post.findById(id).populate(
+        "author",
+        "username email avatar"
+      );
+
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy tin đăng",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: { post },
+      });
+    } catch (error) {
+      console.error("Error fetching admin post by ID:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy chi tiết tin đăng",
+      });
+    }
+  },
+};

@@ -27,7 +27,18 @@ export interface IPost extends Document {
   frontWidth: String;
   packageId: String;
   packageDuration: Number;
-  status: String; // active, inactive, sold
+  status: String; // pending, active, rejected, expired, inactive
+  priority?: String; // normal, premium, vip
+  package?: String; // normal, premium, vip
+  views: Number; // post view count
+  createdAt: Date;
+  updatedAt: Date;
+  // Admin fields
+  approvedAt?: Date;
+  approvedBy?: mongoose.Types.ObjectId;
+  rejectedAt?: Date;
+  rejectedBy?: mongoose.Types.ObjectId;
+  rejectedReason?: String;
   // ... các trường khác
 }
 
@@ -148,8 +159,47 @@ const postSchema = new Schema<IPost>(
     },
     status: {
       type: String,
-      enum: ["pending", "active", "denied", "inactive", "removed"],
+      enum: ["pending", "active", "rejected", "expired", "inactive"],
       default: "pending",
+    },
+    priority: {
+      type: String,
+      enum: ["normal", "premium", "vip"],
+      default: "normal",
+    },
+    package: {
+      type: String,
+      enum: ["normal", "premium", "vip"],
+      default: "normal",
+    },
+    views: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Admin fields
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    approvedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    rejectedAt: {
+      type: Date,
+      default: null,
+    },
+    rejectedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    rejectedReason: {
+      type: String,
+      trim: true,
+      default: null,
     },
   },
   {

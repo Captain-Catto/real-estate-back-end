@@ -6,3 +6,4 @@ export { Category, ICategory } from "./Category";
 export { PriceRange, IPriceRange } from "./Price";
 export { Area, IArea } from "./Area";
 export { Wallet, IWallet } from "./Wallet";
+export { default as UserLog, IUserLog } from "./UserLog";
