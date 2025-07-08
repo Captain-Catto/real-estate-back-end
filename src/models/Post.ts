@@ -169,8 +169,8 @@ const postSchema = new Schema<IPost>(
     },
     package: {
       type: String,
-      enum: ["normal", "premium", "vip"],
-      default: "normal",
+      enum: ["free", "basic", "premium", "vip"],
+      default: "free",
     },
     views: {
       type: Number,

@@ -629,8 +629,35 @@ export const AdminController = {
         new: true,
       }).select("-password -refreshTokens");
 
+      if (!updatedUser) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người dùng sau khi cập nhật",
+        });
+      }
+
+      // Get additional stats for complete user data (same as getUserById)
+      const totalPosts = await Post.countDocuments({ author: updatedUser._id });
+      const totalTransactions = await Payment.countDocuments({
+        userId: updatedUser._id,
+      });
+
+      const spentResult = await Payment.aggregate([
+        { $match: { userId: updatedUser._id, status: "completed" } },
+        { $group: { _id: null, totalSpent: { $sum: "$amount" } } },
+      ]);
+      const totalSpent = spentResult.length > 0 ? spentResult[0].totalSpent : 0;
+
+      // Create complete user object with computed fields
+      const completeUser = {
+        ...updatedUser.toObject(),
+        totalPosts,
+        totalTransactions,
+        totalSpent,
+      };
+
       // Create log entry for changes
-      if (currentUserId && updatedUser) {
+      if (currentUserId) {
         const changes: Record<string, { from: any; to: any }> = {};
 
         if (username && username !== oldValues.username) {
@@ -681,7 +708,7 @@ export const AdminController = {
       res.json({
         success: true,
         message: "Cập nhật thông tin người dùng thành công",
-        data: { user: updatedUser },
+        data: { user: completeUser },
       });
     } catch (error) {
       console.error("Error updating user:", error);
@@ -1110,7 +1137,7 @@ export const AdminController = {
 
       const post = await Post.findById(id).populate(
         "author",
-        "username email avatar"
+        "username email avatar phoneNumber"
       );
 
       if (!post) {

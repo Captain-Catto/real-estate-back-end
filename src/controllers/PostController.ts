@@ -79,7 +79,7 @@ export class PostController {
         tags: tags || [],
         author: userId,
         images,
-        package: postPackage || null,
+        package: postPackage || "free",
         area,
         currency,
         legalDocs,
@@ -180,7 +180,7 @@ export class PostController {
 
       const post = await Post.findById(postId).populate(
         "author",
-        "username email avatar"
+        "username email avatar phoneNumber"
       );
 
       if (!post) {
@@ -457,8 +457,18 @@ export class PostController {
 
       // Cập nhật các trường cần thiết
       const updates = req.body;
+
+      // Handle package field specifically
+      if (updates.package) {
+        post.package = updates.package;
+      }
+
       const allowedUpdateKeys = Object.keys(updates).filter(
-        (key) => key !== "category" && key !== "type" && key !== "status"
+        (key) =>
+          key !== "category" &&
+          key !== "type" &&
+          key !== "status" &&
+          key !== "package"
       );
       allowedUpdateKeys.forEach((key) => {
         // Use type assertion to avoid TS error
@@ -473,6 +483,88 @@ export class PostController {
       });
     } catch (error) {
       console.error("Update post error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  // Resubmit post for approval (only for post author)
+  async resubmitPost(req: AuthenticatedRequest, res: Response) {
+    try {
+      const userId = req.user?.userId;
+      const { postId } = req.params;
+
+      if (!userId || !postId || !mongoose.Types.ObjectId.isValid(postId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request",
+        });
+      }
+
+      const post = await Post.findById(postId);
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Post not found",
+        });
+      }
+
+      // Kiểm tra xem người dùng có phải là tác giả của bài đăng không
+      if (post.author.toString() !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not the author of this post",
+        });
+      }
+
+      // Chỉ cho phép resubmit những tin có status là rejected hoặc expired
+      if (post.status !== "rejected" && post.status !== "expired") {
+        return res.status(400).json({
+          success: false,
+          message: "Only rejected or expired posts can be resubmitted",
+        });
+      }
+
+      // Cập nhật các trường được phép
+      const updates = req.body;
+
+      // Handle package field specifically
+      if (updates.package) {
+        post.package = updates.package;
+      }
+
+      const allowedUpdateKeys = Object.keys(updates).filter(
+        (key) =>
+          key !== "category" &&
+          key !== "type" &&
+          key !== "status" &&
+          key !== "package" &&
+          key !== "author" &&
+          key !== "createdAt" &&
+          key !== "updatedAt"
+      );
+      allowedUpdateKeys.forEach((key) => {
+        (post as any)[key] = updates[key];
+      });
+
+      // Đặt lại trạng thái về pending (chờ duyệt)
+      post.status = "pending"; // pending
+      post.rejectedAt = undefined;
+      post.rejectedBy = undefined;
+      post.rejectedReason = undefined;
+      post.updatedAt = new Date();
+
+      await post.save();
+
+      res.json({
+        success: true,
+        message: "Post resubmitted for approval successfully",
+        data: { post },
+      });
+    } catch (error) {
+      console.error("Resubmit post error:", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -734,6 +826,10 @@ export class PostController {
             location: locationWithName,
           };
         })
+      );
+
+      console.log(
+        `Returning ${postsWithLocationName.length} posts with location names`
       );
 
       res.json({

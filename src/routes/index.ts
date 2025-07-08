@@ -90,6 +90,20 @@ export function setRoutes(app: Express) {
     uploadS3.array("images", 20),
     postController.createPost.bind(postController)
   );
+  // Route để cập nhật toàn bộ bài đăng (chỉ dành cho admin)
+  postRouter.put(
+    "/:postId",
+    authenticateUser,
+    postController.updatePost.bind(postController)
+  );
+
+  // Route để user chỉnh sửa và gửi lại tin chờ duyệt
+  postRouter.put(
+    "/:postId/resubmit",
+    authenticateUser,
+    postController.resubmitPost.bind(postController)
+  );
+
   // chỉnh sửa trạng thái bài viết
   postRouter.patch(
     "/:postId/status",
