@@ -1,4 +1,6 @@
 import { Router, Express } from "express";
+import { authenticateUser, authenticateAdmin } from "../middleware";
+import { uploadS3 } from "../utils/s3Upload";
 import {
   IndexController,
   AuthController,
@@ -12,9 +14,9 @@ import {
   PriceRangeController,
   WalletController, // New controller
   AdminController, // Add admin controller
+  ProjectController, // Add project controller
 } from "../controllers";
-import { authenticateUser } from "../middleware";
-import { uploadS3 } from "../utils/s3Upload";
+import { UploadController } from "../controllers/UploadController";
 
 const router = Router();
 const indexController = new IndexController();
@@ -29,6 +31,8 @@ const categoryController = new CategoryController();
 const priceRangeController = new PriceRangeController();
 const walletController = new WalletController(); // New controller instance
 const adminController = AdminController; // Use the AdminController object directly
+const projectController = new ProjectController(); // New project controller instance
+const uploadController = new UploadController(); // New upload controller instance
 
 export function setRoutes(app: Express) {
   // Trang chủ
@@ -212,6 +216,131 @@ export function setRoutes(app: Express) {
     locationController.getWards.bind(locationController)
   );
 
+  // Admin location management routes
+  locationRouter.get(
+    "/",
+    authenticateAdmin,
+    locationController.getProvincesWithChildren.bind(locationController)
+  );
+
+  // Province CRUD
+  locationRouter.post(
+    "/",
+    authenticateAdmin,
+    locationController.createProvince.bind(locationController)
+  );
+  locationRouter.put(
+    "/:id",
+    authenticateAdmin,
+    locationController.updateProvince.bind(locationController)
+  );
+  locationRouter.delete(
+    "/:id",
+    authenticateAdmin,
+    locationController.deleteProvince.bind(locationController)
+  );
+
+  // District CRUD
+  locationRouter.post(
+    "/:provinceId/districts",
+    authenticateAdmin,
+    locationController.createDistrict.bind(locationController)
+  );
+  locationRouter.put(
+    "/:provinceId/districts/:districtId",
+    authenticateAdmin,
+    locationController.updateDistrict.bind(locationController)
+  );
+  locationRouter.delete(
+    "/:provinceId/districts/:districtId",
+    authenticateAdmin,
+    locationController.deleteDistrict.bind(locationController)
+  );
+
+  // Ward CRUD
+  locationRouter.post(
+    "/:provinceId/districts/:districtId/wards",
+    authenticateAdmin,
+    locationController.createWard.bind(locationController)
+  );
+  locationRouter.put(
+    "/:provinceId/districts/:districtId/wards/:wardId",
+    authenticateAdmin,
+    locationController.updateWard.bind(locationController)
+  );
+  locationRouter.delete(
+    "/:provinceId/districts/:districtId/wards/:wardId",
+    authenticateAdmin,
+    locationController.deleteWard.bind(locationController)
+  );
+
+  // Upload routes
+  const uploadRouter = Router();
+  app.use("/api/upload", uploadRouter);
+
+  // Upload single image (requires authentication)
+  uploadRouter.post(
+    "/image",
+    authenticateUser,
+    uploadController.uploadImage.bind(uploadController)
+  );
+
+  // Upload multiple images (requires authentication)
+  uploadRouter.post(
+    "/images",
+    authenticateUser,
+    uploadController.uploadImages.bind(uploadController)
+  );
+
+  // Delete image (requires authentication)
+  uploadRouter.delete(
+    "/delete",
+    authenticateUser,
+    uploadController.deleteImage.bind(uploadController)
+  );
+
+  // Project routes
+  const projectRouter = Router();
+  app.use("/api/projects", projectRouter);
+
+  // Public project routes - ĐẶT CÁC ROUTE CỐ ĐỊNH TRƯỚC
+  projectRouter.get(
+    "/for-selection",
+    projectController.getProjectsForSelection.bind(projectController)
+  );
+  projectRouter.get(
+    "/admin/list",
+    authenticateAdmin,
+    projectController.getAdminProjects.bind(projectController)
+  );
+  projectRouter.get("/", projectController.getProjects.bind(projectController));
+
+  // ĐẶT CÁC ROUTE DYNAMIC CUỐI
+  projectRouter.get(
+    "/:id",
+    projectController.getProjectById.bind(projectController)
+  );
+  projectRouter.get(
+    "/slug/:slug",
+    projectController.getProjectBySlug.bind(projectController)
+  );
+
+  // Admin project routes
+  projectRouter.post(
+    "/admin",
+    authenticateAdmin,
+    projectController.createProject.bind(projectController)
+  );
+  projectRouter.put(
+    "/admin/:id",
+    authenticateAdmin,
+    projectController.updateProject.bind(projectController)
+  );
+  projectRouter.delete(
+    "/admin/:id",
+    authenticateAdmin,
+    projectController.deleteProject.bind(projectController)
+  );
   // AI
   const aiRouter = Router();
   app.use("/api/ai", aiRouter);

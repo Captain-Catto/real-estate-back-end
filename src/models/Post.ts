@@ -31,6 +31,7 @@ export interface IPost extends Document {
   priority?: String; // normal, premium, vip
   package?: String; // normal, premium, vip
   views: Number; // post view count
+  project?: mongoose.Types.ObjectId; // reference to Project
   createdAt: Date;
   updatedAt: Date;
   // Admin fields
@@ -199,6 +200,11 @@ const postSchema = new Schema<IPost>(
     rejectedReason: {
       type: String,
       trim: true,
+      default: null,
+    },
+    project: {
+      type: Schema.Types.ObjectId,
+      ref: "Project",
       default: null,
     },
   },

@@ -35,6 +35,7 @@ export class PostController {
         phone,
         packageId,
         packageDuration,
+        project,
       } = req.body;
 
       const images: string[] = [];
@@ -96,6 +97,8 @@ export class PostController {
         phone,
         packageId,
         packageDuration,
+        project:
+          project && mongoose.Types.ObjectId.isValid(project) ? project : null,
       });
 
       await post.save();

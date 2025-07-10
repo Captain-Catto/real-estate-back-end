@@ -1,6 +1,7 @@
 import AWS from "aws-sdk";
 import multerS3 from "multer-s3";
 import multer from "multer";
+import { Request } from "express";
 import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
 
@@ -32,7 +33,17 @@ export const uploadS3 = multer({
       const cleanFileName = file.originalname
         .replace(/[^a-zA-Z0-9.]/g, "_")
         .toLowerCase();
-      const fileName = `posts/${uniqueId}-${cleanFileName}`;
+
+      // Determine folder based on request URL
+      let folder = "uploads";
+      const expressReq = req as Request;
+      if (expressReq.url?.includes("/projects")) {
+        folder = "projects";
+      } else if (expressReq.url?.includes("/posts")) {
+        folder = "posts";
+      }
+
+      const fileName = `${folder}/${uniqueId}-${cleanFileName}`;
       cb(null, fileName);
     },
   }),

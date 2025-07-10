@@ -72,3 +72,25 @@ export const authenticateUser = (
     });
   }
 };
+
+// Admin authentication middleware
+export const authenticateAdmin = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  // First authenticate the user
+  authenticateUser(req, res, (err) => {
+    if (err) return next(err);
+
+    // Check if user is admin
+    if (!req.user || req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Admin privileges required.",
+      });
+    }
+
+    next();
+  });
+};

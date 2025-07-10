@@ -59,3 +59,5 @@ export { CategoryController } from "./CategoryController";
 export { PriceRangeController } from "./PriceController";
 export { WalletController } from "./WalletController";
 export { AdminController } from "./AdminController";
+export { ProjectController } from "./ProjectController";
+export { UploadController } from "./UploadController";
