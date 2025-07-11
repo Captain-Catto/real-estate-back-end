@@ -42,7 +42,7 @@ export interface IProjectMap {
 export interface IProjectLocation {
   provinceCode: string;
   districtCode: string;
-  wardCode?: string;
+  wardCode: string;
 }
 
 export interface IProject extends Document {
@@ -53,7 +53,7 @@ export interface IProject extends Document {
   location: IProjectLocation;
   latitude: number;
   longitude: number;
-  developer: IDeveloper;
+  developer: mongoose.Types.ObjectId; // Reference to Developer model
   images: string[];
   videos?: string[];
   totalUnits: number;
@@ -96,16 +96,6 @@ const ProjectFAQSchema = new Schema(
   {
     question: { type: String, required: true },
     answer: { type: String, required: true },
-  },
-  { _id: false }
-);
-
-const DeveloperSchema = new Schema(
-  {
-    name: { type: String, required: true },
-    logo: { type: String, required: true },
-    phone: { type: String, required: true },
-    email: { type: String, required: true },
   },
   { _id: false }
 );
@@ -180,7 +170,8 @@ const ProjectSchema = new Schema<IProject>(
       max: 180,
     },
     developer: {
-      type: DeveloperSchema,
+      type: Schema.Types.ObjectId,
+      ref: "Developer",
       required: true,
     },
     images: [

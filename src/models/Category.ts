@@ -5,28 +5,48 @@ export interface ICategory extends Document {
   name: string; // Tên hiển thị
   slug: string; // Slug cho URL
   isProject?: boolean; // Có phải là dự án không
+  order?: number; // Thứ tự hiển thị
+  isActive?: boolean; // Trạng thái hiển thị
+  description?: string; // Mô tả danh mục
 }
 
-const CategorySchema = new Schema<ICategory>({
-  id: {
-    type: String,
-    required: true,
-    unique: true,
+const CategorySchema = new Schema<ICategory>(
+  {
+    id: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    name: {
+      type: String,
+      required: true,
+    },
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    isProject: {
+      type: Boolean,
+      default: false,
+    },
+    order: {
+      type: Number,
+      default: 0,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    description: {
+      type: String,
+      default: "",
+    },
   },
-  name: {
-    type: String,
-    required: true,
-  },
-  slug: {
-    type: String,
-    required: true,
-    unique: true,
-  },
-  isProject: {
-    type: Boolean,
-    default: false,
-  },
-});
+  {
+    timestamps: true, // Thêm createdAt và updatedAt
+  }
+);
 
 // Text index cho tìm kiếm
 CategorySchema.index({ slug: "text", name: "text" });

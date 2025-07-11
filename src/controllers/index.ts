@@ -40,6 +40,8 @@ export class IndexController {
         },
         locations: {
           getProvinces: "GET /api/locations/provinces",
+          getLocationNames:
+            "GET /api/locations/names?provinceCode=&districtCode=&wardCode=",
           getDistricts: "GET /api/locations/districts/:provinceCode",
           getWards: "GET /api/locations/wards/:provinceCode/:districtCode",
         },
@@ -61,3 +63,4 @@ export { WalletController } from "./WalletController";
 export { AdminController } from "./AdminController";
 export { ProjectController } from "./ProjectController";
 export { UploadController } from "./UploadController";
+export { NotificationController } from "./NotificationController";

@@ -16,6 +16,7 @@ import {
 } from "../utils/payment";
 import mongoose from "mongoose";
 import { Wallet } from "../models/Wallet";
+import { NotificationService } from "../services/NotificationService";
 
 export class PaymentController {
   /**
@@ -726,6 +727,19 @@ export class PaymentController {
 
       await payment.save();
 
+      // If payment is completed, update wallet and send notification
+      if (payment.status === "completed") {
+        try {
+          await this.updateWalletAfterPayment(payment);
+          console.log(
+            `Updated wallet for payment ${orderId} and sent notification`
+          );
+        } catch (error) {
+          console.error("Error updating wallet after payment:", error);
+          // Don't fail the response for wallet/notification errors
+        }
+      }
+
       console.log(`Updated payment ${orderId} to ${payment.status} status`);
 
       res.json({
@@ -772,11 +786,19 @@ export class PaymentController {
 
       // Determine transaction type and amount
       const description = payment.description.toLowerCase();
+      // Cải thiện logic xác định isTopup
       const isTopup =
         description.includes("nap") ||
         description.includes("nạp") ||
         description.includes("topup") ||
-        description.includes("deposit");
+        description.includes("deposit") ||
+        description.includes("nạp tiền") ||
+        description.includes("nap tien") ||
+        !payment.metadata?.packageName; // Nếu không có packageName thì mặc định là topup
+
+      console.log(
+        `💰 Processing payment - isTopup: ${isTopup}, description: "${description}"`
+      );
 
       if (isTopup) {
         // Process deposit to wallet
@@ -829,6 +851,40 @@ export class PaymentController {
         await payment.save({ session });
       } else {
         await payment.save();
+      }
+
+      // Send notification for successful top-up
+      if (isTopup) {
+        try {
+          console.log(
+            `🔔 Creating top-up notification for user ${payment.userId}, amount: ${payment.amount}`
+          );
+          await NotificationService.createTopUpSuccessNotification(
+            payment.userId,
+            payment.amount,
+            payment.orderId
+          );
+          console.log(`✅ Top-up notification created successfully`);
+        } catch (error) {
+          console.error("❌ Error sending top-up notification:", error);
+          // Don't fail the transaction for notification error
+        }
+      }
+
+      // Send notification for package purchase
+      if (!isTopup && payment.metadata?.packageName) {
+        try {
+          await NotificationService.createPackagePurchaseNotification(
+            payment.userId,
+            payment.metadata.packageName,
+            payment.amount,
+            payment.orderId,
+            payment.metadata.packageDuration || 30
+          );
+        } catch (error) {
+          console.error("Error sending package purchase notification:", error);
+          // Don't fail the transaction for notification error
+        }
       }
 
       return true;

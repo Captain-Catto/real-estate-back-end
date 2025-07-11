@@ -5,6 +5,7 @@ import { Payment, IPayment } from "../models/Payment";
 import UserLog from "../models/UserLog";
 import mongoose from "mongoose";
 import { AuthenticatedRequest } from "../middleware";
+import { NotificationService } from "../services/NotificationService";
 
 interface AdminStats {
   totalPosts: number;
@@ -1037,6 +1038,18 @@ export const AdminController = {
         : undefined;
       await post.save();
 
+      // Send notification for post approval
+      try {
+        await NotificationService.createPostApprovedNotification(
+          post.author.toString(),
+          post.title.toString(),
+          post._id.toString()
+        );
+      } catch (error) {
+        console.error("Error sending post approval notification:", error);
+        // Don't fail the transaction for notification error
+      }
+
       res.json({
         success: true,
         message: "Đã duyệt tin đăng thành công",
@@ -1080,6 +1093,19 @@ export const AdminController = {
         : undefined;
       post.rejectedReason = reason;
       await post.save();
+
+      // Send notification for post rejection
+      try {
+        await NotificationService.createPostRejectedNotification(
+          post.author.toString(),
+          post.title.toString(),
+          post._id.toString(),
+          reason
+        );
+      } catch (error) {
+        console.error("Error sending post rejection notification:", error);
+        // Don't fail the transaction for notification error
+      }
 
       res.json({
         success: true,

@@ -17,6 +17,8 @@ import {
   ProjectController, // Add project controller
 } from "../controllers";
 import { UploadController } from "../controllers/UploadController";
+import { DeveloperController } from "../controllers/DeveloperController";
+import { NotificationController } from "../controllers/NotificationController";
 
 const router = Router();
 const indexController = new IndexController();
@@ -32,6 +34,7 @@ const priceRangeController = new PriceRangeController();
 const walletController = new WalletController(); // New controller instance
 const adminController = AdminController; // Use the AdminController object directly
 const projectController = new ProjectController(); // New project controller instance
+const developerController = new DeveloperController(); // New developer controller instance
 const uploadController = new UploadController(); // New upload controller instance
 
 export function setRoutes(app: Express) {
@@ -202,6 +205,10 @@ export function setRoutes(app: Express) {
   locationRouter.get(
     "/provinces",
     locationController.getProvinces.bind(locationController)
+  );
+  locationRouter.get(
+    "/names",
+    locationController.getLocationNames.bind(locationController)
   );
   locationRouter.get(
     "/province/:slug",
@@ -378,6 +385,45 @@ export function setRoutes(app: Express) {
     categoryController.getCategoryBySlug.bind(categoryController)
   );
 
+  // Admin Category routes
+  const adminCategoryRouter = Router();
+  app.use("/api/admin/categories", adminCategoryRouter);
+
+  // Get all categories for admin
+  adminCategoryRouter.get(
+    "/",
+    authenticateAdmin,
+    categoryController.getAdminCategories.bind(categoryController)
+  );
+
+  // Create new category
+  adminCategoryRouter.post(
+    "/",
+    authenticateAdmin,
+    categoryController.createCategory.bind(categoryController)
+  );
+
+  // Update category order
+  adminCategoryRouter.put(
+    "/order",
+    authenticateAdmin,
+    categoryController.updateCategoriesOrder.bind(categoryController)
+  );
+
+  // Update category
+  adminCategoryRouter.put(
+    "/:id",
+    authenticateAdmin,
+    categoryController.updateCategory.bind(categoryController)
+  );
+
+  // Delete category
+  adminCategoryRouter.delete(
+    "/:id",
+    authenticateAdmin,
+    categoryController.deleteCategory.bind(categoryController)
+  );
+
   // Price Range
   const priceRangeRouter = Router();
   app.use("/api/price-ranges", priceRangeRouter);
@@ -510,5 +556,83 @@ export function setRoutes(app: Express) {
     "/users/:id",
     authenticateUser,
     AdminController.deleteUser
+  );
+
+  // Developer routes
+  const developerRouter = Router();
+  app.use("/api/developers", developerRouter);
+
+  // Public developer routes
+  developerRouter.get(
+    "/",
+    developerController.getDevelopers.bind(developerController)
+  );
+  developerRouter.get(
+    "/for-selection",
+    developerController.getDevelopersForSelection.bind(developerController)
+  );
+  developerRouter.get(
+    "/:id",
+    developerController.getDeveloperById.bind(developerController)
+  );
+
+  // Admin developer routes
+  developerRouter.get(
+    "/admin/list",
+    authenticateAdmin,
+    developerController.getAdminDevelopers.bind(developerController)
+  );
+  developerRouter.post(
+    "/",
+    authenticateAdmin,
+    developerController.createDeveloper.bind(developerController)
+  );
+  developerRouter.put(
+    "/:id",
+    authenticateAdmin,
+    developerController.updateDeveloper.bind(developerController)
+  );
+  developerRouter.delete(
+    "/:id",
+    authenticateAdmin,
+    developerController.deleteDeveloper.bind(developerController)
+  );
+
+  // Notification routes
+  const notificationRouter = Router();
+  app.use("/api/notifications", notificationRouter);
+
+  // User notification routes
+  notificationRouter.get(
+    "/",
+    authenticateUser,
+    NotificationController.getNotifications
+  );
+  notificationRouter.get(
+    "/unread-count",
+    authenticateUser,
+    NotificationController.getUnreadCount
+  );
+  notificationRouter.put(
+    "/:id/read",
+    authenticateUser,
+    NotificationController.markAsRead
+  );
+  notificationRouter.put(
+    "/read-all",
+    authenticateUser,
+    NotificationController.markAllAsRead
+  );
+  notificationRouter.delete(
+    "/:id",
+    authenticateUser,
+    NotificationController.deleteNotification
+  );
+
+  // Demo notification route (for testing action buttons)
+  notificationRouter.post(
+    "/demo",
+    authenticateUser,
+    NotificationController.createDemoNotifications
   );
 }

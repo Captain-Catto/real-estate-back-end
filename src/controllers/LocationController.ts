@@ -148,6 +148,113 @@ export class LocationController {
     }
   }
 
+  // Lấy tên đầy đủ của địa danh dựa trên codes
+  async getLocationNames(req: Request, res: Response) {
+    try {
+      const { provinceCode, districtCode, wardCode } = req.query;
+
+      console.log("📍 getLocationNames called with:", {
+        provinceCode,
+        districtCode,
+        wardCode,
+      });
+
+      if (!provinceCode) {
+        return res.status(400).json({
+          success: false,
+          message: "Province code is required",
+        });
+      }
+
+      // Find province
+      let province;
+      if (!isNaN(Number(provinceCode))) {
+        province = await LocationModel.findOne({ code: Number(provinceCode) });
+      }
+
+      if (!province) {
+        province = await LocationModel.findOne({
+          $or: [{ slug: provinceCode }, { codename: provinceCode }],
+        });
+      }
+
+      if (!province) {
+        return res.status(404).json({
+          success: false,
+          message: "Province not found",
+        });
+      }
+
+      const result: any = {
+        provinceName: province.name,
+        provinceCode: province.code,
+      };
+
+      // Find district if provided
+      if (districtCode) {
+        let district;
+        if (!isNaN(Number(districtCode))) {
+          district = province.districts.find(
+            (d: any) => d.code === Number(districtCode)
+          );
+        }
+
+        if (!district) {
+          district = province.districts.find(
+            (d: any) => d.slug === districtCode || d.codename === districtCode
+          );
+        }
+
+        if (district) {
+          result.districtName = district.name;
+          result.districtCode = district.code;
+
+          // Find ward if provided
+          if (wardCode) {
+            let ward;
+            if (!isNaN(Number(wardCode))) {
+              ward = district.wards?.find(
+                (w: any) => w.code === Number(wardCode)
+              );
+            }
+
+            if (!ward) {
+              ward = district.wards?.find(
+                (w: any) => w.slug === wardCode || w.codename === wardCode
+              );
+            }
+
+            if (ward) {
+              result.wardName = ward.name;
+              result.wardCode = ward.code;
+            }
+          }
+        }
+      }
+
+      // Build full location name
+      const locationParts = [];
+      if (result.wardName) locationParts.push(result.wardName);
+      if (result.districtName) locationParts.push(result.districtName);
+      if (result.provinceName) locationParts.push(result.provinceName);
+
+      result.fullLocationName = locationParts.join(", ");
+
+      console.log("📍 Location names result:", result);
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      console.error("❌ Error getting location names:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
   // ===== ADMIN CRUD METHODS =====
 
   // Lấy tất cả provinces với districts và wards (for admin)

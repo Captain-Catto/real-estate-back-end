@@ -8,3 +8,4 @@ export { Area, IArea } from "./Area";
 export { Wallet, IWallet } from "./Wallet";
 export { Project, IProject } from "./Project";
 export { default as UserLog, IUserLog } from "./UserLog";
+export { Notification, INotification } from "./Notification";

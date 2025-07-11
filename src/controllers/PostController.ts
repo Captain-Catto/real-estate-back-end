@@ -3,6 +3,7 @@ import { Post } from "../models";
 import { AuthenticatedRequest } from "../middleware";
 import mongoose from "mongoose";
 import { LocationModel } from "../models/Location";
+import { NotificationService } from "../services/NotificationService";
 
 export class PostController {
   // Create new post
@@ -429,7 +430,7 @@ export class PostController {
   }
 
   // Update post by ID (only for author)
-  // todo: không cho phép cập nhật category, type, status, author
+  // Khi người dùng edit tin đăng, sẽ chuyển trạng thái về pending để admin duyệt lại
   async updatePost(req: AuthenticatedRequest, res: Response) {
     try {
       const userId = req.user?.userId;
@@ -458,6 +459,9 @@ export class PostController {
         });
       }
 
+      // Lưu trạng thái cũ để log
+      const oldStatus = post.status;
+
       // Cập nhật các trường cần thiết
       const updates = req.body;
 
@@ -478,10 +482,22 @@ export class PostController {
         (post as any)[key] = updates[key];
       });
 
+      // QUAN TRỌNG: Chuyển trạng thái về pending để admin duyệt lại
+      // Trừ khi tin đang ở trạng thái draft hoặc đã bị reject
+      if (post.status !== "draft" && post.status !== "rejected") {
+        post.status = "pending";
+        post.approvedAt = undefined;
+        post.approvedBy = undefined;
+        console.log(`📝 Post ${postId} status changed from "${oldStatus}" to "pending" after user edit`);
+      }
+
       await post.save();
+      
+      console.log(`✅ Post ${postId} updated successfully by user ${userId}`);
+      
       res.json({
         success: true,
-        message: "Post updated successfully",
+        message: "Post updated successfully. Your post will be reviewed again.",
         data: { post },
       });
     } catch (error) {
@@ -605,9 +621,53 @@ export class PostController {
         });
       }
 
+      // Lưu trạng thái cũ để so sánh
+      const oldStatus = post.status;
+
       // Cập nhật trạng thái bài đăng
       post.status = status;
+      
+      // Thêm thông tin admin duyệt/từ chối
+      if (status === "active") {
+        post.approvedAt = new Date();
+        post.approvedBy = new mongoose.Types.ObjectId(userId);
+        post.rejectedAt = undefined;
+        post.rejectedBy = undefined;
+        post.rejectedReason = undefined;
+      } else if (status === "rejected") {
+        post.rejectedAt = new Date();
+        post.rejectedBy = new mongoose.Types.ObjectId(userId);
+        post.rejectedReason = req.body.reason || "Không đạt yêu cầu";
+        post.approvedAt = undefined;
+        post.approvedBy = undefined;
+      }
+      
       await post.save();
+
+      // Gửi notification tương ứng với trạng thái mới
+      try {
+        if (status === "active" && oldStatus !== "active") {
+          console.log(`📨 Sending post approval notification for post ${postId}`);
+          await NotificationService.createPostApprovedNotification(
+            post.author.toString(),
+            post.title.toString(),
+            post._id.toString()
+          );
+        } else if (status === "rejected" && oldStatus !== "rejected") {
+          console.log(`📨 Sending post rejection notification for post ${postId}`);
+          await NotificationService.createPostRejectedNotification(
+            post.author.toString(),
+            post.title.toString(),
+            post._id.toString(),
+            post.rejectedReason?.toString()
+          );
+        }
+      } catch (error) {
+        console.error("❌ Error sending notification:", error);
+        // Không fail request vì notification error
+      }
+
+      console.log(`✅ Post ${postId} status updated from "${oldStatus}" to "${status}" by ${userId}`);
 
       res.json({
         success: true,

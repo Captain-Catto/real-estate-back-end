@@ -26,8 +26,29 @@ export class ProjectController {
         };
       }
 
-      // Filter by location
-      if (req.query.location) {
+      // Filter by location codes (prioritized over fullLocation)
+      if (req.query.provinceCode) {
+        filter["location.provinceCode"] = req.query.provinceCode;
+        console.log("📍 Filtering by province:", req.query.provinceCode);
+      }
+
+      if (req.query.districtCode) {
+        filter["location.districtCode"] = req.query.districtCode;
+        console.log("🏢 Filtering by district:", req.query.districtCode);
+      }
+
+      if (req.query.wardCode) {
+        filter["location.wardCode"] = req.query.wardCode;
+        console.log("🏠 Filtering by ward:", req.query.wardCode);
+      }
+
+      // Filter by location text (fallback if no location codes provided)
+      if (
+        req.query.location &&
+        !req.query.provinceCode &&
+        !req.query.districtCode &&
+        !req.query.wardCode
+      ) {
         filter.fullLocation = { $regex: req.query.location, $options: "i" };
       }
 
@@ -147,8 +168,9 @@ export class ProjectController {
       // Get projects with pagination
       const projects = await Project.find(filter)
         .select(
-          "_id name slug fullLocation developer.name status totalUnits area priceRange createdAt updatedAt"
+          "_id name slug fullLocation location developer status totalUnits area priceRange createdAt updatedAt"
         )
+        .populate("developer", "name logo")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);

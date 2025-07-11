@@ -7,7 +7,8 @@
     "start": "ts-node src/app.ts",
     "dev": "nodemon src/app.ts",
     "build": "tsc",
-    "import-location": "ts-node scripts/importLocation.ts"
+    "import-location": "ts-node scripts/importLocation.ts",
+    "seed-categories": "ts-node scripts/seedCategories.ts"
   },
   "dependencies": {
     "@ai-sdk/groq": "^1.2.9",
