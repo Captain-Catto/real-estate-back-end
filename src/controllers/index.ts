@@ -64,3 +64,4 @@ export { AdminController } from "./AdminController";
 export { ProjectController } from "./ProjectController";
 export { UploadController } from "./UploadController";
 export { NotificationController } from "./NotificationController";
+export { PackageController } from "./PackageController";

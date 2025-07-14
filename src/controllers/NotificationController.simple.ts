@@ -1,8 +1,19 @@
 import { Response } from "express";
 import { Notification, INotification } from "../models/Notification";
+import { User } from "../models/User";
 import { AuthenticatedRequest } from "../middleware";
 import mongoose from "mongoose";
 
+/**
+ * 🔔 SIMPLIFIED NOTIFICATION CONTROLLER
+ * Chỉ giữ lại 4 loại thông báo cần thiết:
+ * 1. 💰 PAYMENT - Nạp tiền thành công
+ * 2. 💳 POST_PAYMENT - Thanh toán tin đăng
+ * 3. ✅ POST_APPROVED - Tin đăng được duyệt
+ * 4. ❌ POST_REJECTED - Tin đăng bị từ chối
+ *
+ * 🎯 Khi click vào notification sẽ chuyển hướng trực tiếp đến link liên quan
+ */
 export class NotificationController {
   // Lấy danh sách notification của user
   static async getNotifications(req: AuthenticatedRequest, res: Response) {
@@ -13,14 +24,22 @@ export class NotificationController {
       const type = req.query.type as string;
       const read = req.query.read as string;
 
+      console.log("Query parameters:", { page, limit, type, read });
+      console.log("User ID:", userId);
+
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      // Build query
+      // Build query - CHỈ CHO PHÉP 4 LOẠI THÔNG BÁO
       const query: any = { userId: new mongoose.Types.ObjectId(userId) };
 
-      if (type) {
+      if (
+        type &&
+        ["PAYMENT", "POST_PAYMENT", "POST_APPROVED", "POST_REJECTED"].includes(
+          type
+        )
+      ) {
         query.type = type;
       }
 
@@ -100,14 +119,14 @@ export class NotificationController {
 
       res.json({
         success: true,
-        data: notification,
-        message: "Đã đánh dấu thông báo đã đọc",
+        message: "Đã đánh dấu đã đọc",
+        data: { notification },
       });
     } catch (error) {
       console.error("Error marking notification as read:", error);
       res.status(500).json({
         success: false,
-        message: "Lỗi khi đánh dấu thông báo",
+        message: "Lỗi khi đánh dấu đã đọc",
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
@@ -132,16 +151,14 @@ export class NotificationController {
 
       res.json({
         success: true,
-        data: {
-          modifiedCount: result.modifiedCount,
-        },
         message: `Đã đánh dấu ${result.modifiedCount} thông báo đã đọc`,
+        data: { updatedCount: result.modifiedCount },
       });
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
       res.status(500).json({
         success: false,
-        message: "Lỗi khi đánh dấu tất cả thông báo",
+        message: "Lỗi khi đánh dấu tất cả đã đọc",
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
@@ -195,7 +212,7 @@ export class NotificationController {
     userId: string | mongoose.Types.ObjectId,
     title: string,
     message: string,
-    type: INotification["type"],
+    type: "PAYMENT" | "POST_PAYMENT" | "POST_APPROVED" | "POST_REJECTED", // CHỈ 4 LOẠI
     data?: any
   ): Promise<INotification | null> {
     try {
@@ -245,7 +262,8 @@ export class NotificationController {
     }
   }
 
-  // Helper methods for creating specific notification types
+  // ===== CHỈ GIỮ LẠI 4 HELPER METHODS CẦN THIẾT =====
+
   static async createPaymentNotification(
     userId: string | mongoose.Types.ObjectId,
     amount: number,
@@ -253,12 +271,30 @@ export class NotificationController {
   ) {
     return await NotificationController.createNotification(
       userId,
-      "Nạp tiền thành công",
+      "💰 Nạp tiền thành công",
       `Bạn đã nạp thành công ${amount.toLocaleString(
         "vi-VN"
       )} VNĐ vào tài khoản`,
       "PAYMENT",
       { amount, paymentId }
+    );
+  }
+
+  static async createPostPaymentNotification(
+    userId: string | mongoose.Types.ObjectId,
+    postTitle: string,
+    amount: number,
+    postId: string,
+    paymentId?: string
+  ) {
+    return await NotificationController.createNotification(
+      userId,
+      "💳 Thanh toán tin đăng",
+      `Bạn đã thanh toán ${amount.toLocaleString(
+        "vi-VN"
+      )} VNĐ cho tin đăng "${postTitle}"`,
+      "POST_PAYMENT",
+      { postId, postTitle, amount, paymentId }
     );
   }
 
@@ -269,7 +305,7 @@ export class NotificationController {
   ) {
     return await NotificationController.createNotification(
       userId,
-      "Tin đăng được duyệt",
+      "✅ Tin đăng được duyệt",
       `Tin đăng "${postTitle}" của bạn đã được duyệt và hiển thị công khai`,
       "POST_APPROVED",
       { postId, postTitle }
@@ -284,7 +320,7 @@ export class NotificationController {
   ) {
     return await NotificationController.createNotification(
       userId,
-      "Tin đăng bị từ chối",
+      "❌ Tin đăng bị từ chối",
       `Tin đăng "${postTitle}" của bạn đã bị từ chối${
         reason ? `: ${reason}` : ""
       }`,
@@ -293,49 +329,11 @@ export class NotificationController {
     );
   }
 
-  static async createPackagePurchaseNotification(
-    userId: string | mongoose.Types.ObjectId,
-    packageName: string,
-    amount: number,
-    paymentId?: string
-  ) {
-    return await NotificationController.createNotification(
-      userId,
-      "Mua gói tin thành công",
-      `Bạn đã mua thành công gói "${packageName}" với giá ${amount.toLocaleString(
-        "vi-VN"
-      )} VNĐ`,
-      "PACKAGE_PURCHASE",
-      { packageName, amount, paymentId }
-    );
-  }
-
-  static async createSystemNotification(
-    userId: string | mongoose.Types.ObjectId,
-    title: string,
-    message: string,
-    data?: any
-  ) {
-    return await NotificationController.createNotification(
-      userId,
-      title,
-      message,
-      "SYSTEM",
-      data
-    );
-  }
-
-  static async createInterestNotification(
-    userId: string | mongoose.Types.ObjectId,
-    postTitle: string,
-    postId: string
-  ) {
-    return await NotificationController.createNotification(
-      userId,
-      "Có người quan tâm tin đăng",
-      `Có người quan tâm đến tin đăng "${postTitle}" của bạn`,
-      "INTEREST",
-      { postId, postTitle }
-    );
-  }
+  // ===== XÓA TẤT CẢ ADMIN METHODS =====
+  // Không cần admin tạo thông báo thủ công nữa
+  // Tất cả thông báo đều tự động từ hệ thống:
+  // - PAYMENT: tự động từ PaymentController (nạp tiền)
+  // - POST_PAYMENT: tự động từ PaymentController (thanh toán tin đăng)
+  // - POST_APPROVED: tự động từ AdminController.approvePost
+  // - POST_REJECTED: tự động từ AdminController.rejectPost
 }

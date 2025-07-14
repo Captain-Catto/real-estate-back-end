@@ -6,6 +6,7 @@ import UserLog from "../models/UserLog";
 import mongoose from "mongoose";
 import { AuthenticatedRequest } from "../middleware";
 import { NotificationService } from "../services/NotificationService";
+import { Package } from "../models/Package";
 
 interface AdminStats {
   totalPosts: number;
@@ -1036,6 +1037,29 @@ export const AdminController = {
       post.approvedBy = currentUserId
         ? new mongoose.Types.ObjectId(currentUserId)
         : undefined;
+
+      // Tính toán expiredAt khi approve post (nếu có packageId và chưa có expiredAt)
+      if (post.packageId && !post.expiredAt) {
+        const packageInfo = await Package.findOne({
+          id: post.packageId,
+          isActive: true,
+        });
+
+        if (packageInfo) {
+          const durationToUse = Number(
+            post.originalPackageDuration || packageInfo.duration || 30
+          );
+          const now = new Date();
+          post.expiredAt = new Date(
+            now.getTime() + durationToUse * 24 * 60 * 60 * 1000
+          );
+
+          console.log(
+            `📅 Post approved with expiry: Package ${post.packageId}, Duration: ${durationToUse} days, Expires at: ${post.expiredAt}`
+          );
+        }
+      }
+
       await post.save();
 
       // Send notification for post approval
@@ -1182,6 +1206,156 @@ export const AdminController = {
       res.status(500).json({
         success: false,
         message: "Lỗi server khi lấy chi tiết tin đăng",
+      });
+    }
+  },
+
+  // GET /api/admin/payments - Get all payments with filters and pagination
+  getAllPayments: async (req: Request, res: Response) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string;
+      const status = req.query.status as string;
+      const type = req.query.type as string; // topup, post_payment, etc.
+      const dateFrom = req.query.dateFrom as string;
+      const dateTo = req.query.dateTo as string;
+
+      // Build query
+      const query: any = {};
+
+      // Status filter
+      if (status && status !== "all") {
+        query.status = status;
+      }
+
+      // Type filter (based on metadata or description)
+      if (type && type !== "all") {
+        if (type === "topup") {
+          query.$or = [
+            {
+              description: { $regex: "nạp tiền|nap tien|topup", $options: "i" },
+            },
+            { "metadata.isTopup": true },
+          ];
+        } else if (type === "post_payment") {
+          query.$or = [
+            {
+              description: {
+                $regex: "thanh toán.*tin|thanh toan.*tin",
+                $options: "i",
+              },
+            },
+            { postId: { $exists: true, $ne: null } },
+          ];
+        }
+      }
+
+      // Date range filter
+      if (dateFrom || dateTo) {
+        query.createdAt = {};
+        if (dateFrom) {
+          query.createdAt.$gte = new Date(dateFrom);
+        }
+        if (dateTo) {
+          query.createdAt.$lte = new Date(dateTo);
+        }
+      }
+
+      const skip = (page - 1) * limit;
+
+      // Get payments with user and post info
+      const payments = await Payment.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("userId", "username email avatar")
+        .populate("postId", "title type")
+        .lean();
+
+      // If search term is provided, filter by orderId, user name, email, or post title
+      let filteredPayments = payments;
+      if (search && search.trim()) {
+        const searchLower = search.toLowerCase().trim();
+        filteredPayments = payments.filter((payment: any) => {
+          return (
+            payment.orderId?.toLowerCase().includes(searchLower) ||
+            payment.userId?.username?.toLowerCase().includes(searchLower) ||
+            payment.userId?.email?.toLowerCase().includes(searchLower) ||
+            payment.postId?.title?.toLowerCase().includes(searchLower) ||
+            payment.description?.toLowerCase().includes(searchLower)
+          );
+        });
+      }
+
+      const total = await Payment.countDocuments(query);
+      const totalPages = Math.ceil(total / limit);
+
+      // Calculate stats
+      const [totalAmount, totalTopup, totalPostPayments] = await Promise.all([
+        Payment.aggregate([
+          { $match: { status: "completed" } },
+          { $group: { _id: null, total: { $sum: "$amount" } } },
+        ]),
+        Payment.aggregate([
+          {
+            $match: {
+              status: "completed",
+              $or: [
+                {
+                  description: {
+                    $regex: "nạp tiền|nap tien|topup",
+                    $options: "i",
+                  },
+                },
+                { "metadata.isTopup": true },
+              ],
+            },
+          },
+          { $group: { _id: null, total: { $sum: "$amount" } } },
+        ]),
+        Payment.aggregate([
+          {
+            $match: {
+              status: "completed",
+              $or: [
+                {
+                  description: {
+                    $regex: "thanh toán.*tin|thanh toan.*tin",
+                    $options: "i",
+                  },
+                },
+                { postId: { $exists: true, $ne: null } },
+              ],
+            },
+          },
+          { $group: { _id: null, total: { $sum: "$amount" } } },
+        ]),
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          payments: filteredPayments,
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalItems: total,
+            itemsPerPage: limit,
+          },
+          stats: {
+            totalAmount: totalAmount[0]?.total || 0,
+            totalTopup: totalTopup[0]?.total || 0,
+            totalPostPayments: totalPostPayments[0]?.total || 0,
+            totalTransactions: total,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching all payments:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy danh sách giao dịch",
       });
     }
   },

@@ -15,6 +15,7 @@ import {
   WalletController, // New controller
   AdminController, // Add admin controller
   ProjectController, // Add project controller
+  PackageController, // Add package controller
 } from "../controllers";
 import { UploadController } from "../controllers/UploadController";
 import { DeveloperController } from "../controllers/DeveloperController";
@@ -32,10 +33,10 @@ const areaController = new AreaController();
 const categoryController = new CategoryController();
 const priceRangeController = new PriceRangeController();
 const walletController = new WalletController(); // New controller instance
-const adminController = AdminController; // Use the AdminController object directly
 const projectController = new ProjectController(); // New project controller instance
 const developerController = new DeveloperController(); // New developer controller instance
 const uploadController = new UploadController(); // New upload controller instance
+const packageController = new PackageController(); // New package controller instance
 
 export function setRoutes(app: Express) {
   // Trang chủ
@@ -115,6 +116,20 @@ export function setRoutes(app: Express) {
   postRouter.patch(
     "/:postId/status",
     postController.updatePostStatus.bind(postController)
+  );
+
+  // Admin endpoint để check expired posts
+  postRouter.post(
+    "/admin/check-expired",
+    authenticateUser,
+    postController.checkExpiredPosts.bind(postController)
+  );
+
+  // User endpoint để gia hạn post
+  postRouter.post(
+    "/:postId/extend",
+    authenticateUser,
+    postController.extendPost.bind(postController)
   );
 
   // Favorite
@@ -558,6 +573,16 @@ export function setRoutes(app: Express) {
     AdminController.deleteUser
   );
 
+  // Admin payment management routes
+  adminRouter.get(
+    "/payments",
+    authenticateUser,
+    AdminController.getAllPayments
+  );
+
+  // Admin notification management đã được bỏ
+  // Chỉ giữ lại 3 loại thông báo tự động: PAYMENT, POST_APPROVED, POST_REJECTED
+
   // Developer routes
   const developerRouter = Router();
   app.use("/api/developers", developerRouter);
@@ -629,10 +654,45 @@ export function setRoutes(app: Express) {
     NotificationController.deleteNotification
   );
 
-  // Demo notification route (for testing action buttons)
-  notificationRouter.post(
-    "/demo",
-    authenticateUser,
-    NotificationController.createDemoNotifications
+  // Demo routes đã được bỏ - chỉ có thông báo tự động
+
+  // Package routes
+  const packageRouter = Router();
+  app.use("/api/packages", packageRouter);
+
+  // Public routes - lấy packages active cho user
+  packageRouter.get(
+    "/",
+    packageController.getActivePackages.bind(packageController)
+  );
+
+  // Admin routes
+  const adminPackageRouter = Router();
+  app.use("/api/admin/packages", adminPackageRouter);
+
+  adminPackageRouter.get(
+    "/",
+    authenticateAdmin,
+    packageController.getAllPackages.bind(packageController)
+  );
+  adminPackageRouter.post(
+    "/",
+    authenticateAdmin,
+    packageController.createPackage.bind(packageController)
+  );
+  adminPackageRouter.get(
+    "/:id",
+    authenticateAdmin,
+    packageController.getPackageById.bind(packageController)
+  );
+  adminPackageRouter.put(
+    "/:id",
+    authenticateAdmin,
+    packageController.updatePackage.bind(packageController)
+  );
+  adminPackageRouter.delete(
+    "/:id",
+    authenticateAdmin,
+    packageController.deletePackage.bind(packageController)
   );
 }

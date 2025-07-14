@@ -7,13 +7,7 @@ export interface CreateNotificationData {
   userId: string | mongoose.Types.ObjectId;
   title: string;
   message: string;
-  type:
-    | "PAYMENT"
-    | "POST_APPROVED"
-    | "POST_REJECTED"
-    | "PACKAGE_PURCHASE"
-    | "SYSTEM"
-    | "INTEREST";
+  type: "PAYMENT" | "POST_PAYMENT" | "POST_APPROVED" | "POST_REJECTED"; // Chỉ giữ 4 loại cần thiết
   data?: any;
 }
 
@@ -175,32 +169,35 @@ export class NotificationService {
   }
 
   /**
-   * Notification khi user thanh toán gói tin đăng thành công
+   * Notification khi user thanh toán tin đăng
    */
-  static async createPackagePurchaseNotification(
+  static async createPostPaymentNotification(
     userId: string | mongoose.Types.ObjectId,
-    packageName: string,
+    postTitle: string,
     amount: number,
-    orderId: string,
-    duration: number
+    postId: string,
+    orderId?: string
   ): Promise<void> {
     const formattedAmount = new Intl.NumberFormat("vi-VN").format(amount);
 
+    // Generate SEO URL for the post
+    const postUrl = await generatePostUrl(postId);
+
     await this.createNotification({
       userId,
-      title: "🎉 Mua gói tin thành công",
-      message: `Bạn đã mua thành công gói "${packageName}" với giá ${formattedAmount} VND. Gói có hiệu lực ${duration} ngày.`,
-      type: "PACKAGE_PURCHASE",
+      title: "💳 Thanh toán tin đăng",
+      message: `Bạn đã thanh toán ${formattedAmount} VND cho tin đăng "${postTitle}". Tin đăng sẽ được xử lý trong thời gian sớm nhất.`,
+      type: "POST_PAYMENT",
       data: {
-        orderId,
-        packageName,
+        postId,
+        postTitle,
         amount,
-        duration,
-        action: "package_purchase",
+        orderId,
+        action: "post_payment",
         actionButton: {
-          text: "Đăng tin ngay",
-          link: "/nguoi-dung/dang-tin",
-          style: "success",
+          text: "Xem tin đăng",
+          link: postUrl,
+          style: "primary",
         },
       },
     });
@@ -267,62 +264,11 @@ export class NotificationService {
     });
   }
 
-  /**
-   * Notification khi có user quan tâm tin đăng
-   */
-  static async createInterestNotification(
-    userId: string | mongoose.Types.ObjectId,
-    postTitle: string,
-    postId: string,
-    interestedUserName: string
-  ): Promise<void> {
-    // Generate SEO URL for the post
-    const postUrl = await generatePostUrl(postId);
-
-    await this.createNotification({
-      userId,
-      title: "💖 Có người quan tâm tin đăng",
-      message: `${interestedUserName} đã quan tâm đến tin đăng "${postTitle}" của bạn. Hãy liên hệ để trao đổi thêm!`,
-      type: "INTEREST",
-      data: {
-        postId,
-        postTitle,
-        interestedUserName,
-        action: "post_interest",
-        actionButton: {
-          text: "Xem tin đăng",
-          link: postUrl,
-          style: "info",
-        },
-      },
-    });
-  }
-
-  /**
-   * Notification hệ thống (thông báo chung)
-   */
-  static async createSystemNotification(
-    userId: string | mongoose.Types.ObjectId,
-    title: string,
-    message: string,
-    data?: any
-  ): Promise<void> {
-    await this.createNotification({
-      userId,
-      title,
-      message,
-      type: "SYSTEM",
-      data: {
-        ...data,
-        action: "system",
-        actionButton: data?.actionButton || {
-          text: "Tìm hiểu thêm",
-          link: "/",
-          style: "secondary",
-        },
-      },
-    });
-  }
+  // ====== XÓA CÁC METHOD KHÔNG CẦN THIẾT ======
+  // - createPackagePurchaseNotification (không cần nữa)
+  // - createInterestNotification (không cần nữa)
+  // - createSystemNotification (không cần nữa)
+  // - createBroadcastNotification (không cần nữa)
 
   /**
    * Gửi notification broadcast cho nhiều users

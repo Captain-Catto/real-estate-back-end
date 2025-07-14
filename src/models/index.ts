@@ -7,5 +7,6 @@ export { PriceRange, IPriceRange } from "./Price";
 export { Area, IArea } from "./Area";
 export { Wallet, IWallet } from "./Wallet";
 export { Project, IProject } from "./Project";
+export { Package, IPackage } from "./Package";
 export { default as UserLog, IUserLog } from "./UserLog";
 export { Notification, INotification } from "./Notification";

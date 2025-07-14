@@ -6,6 +6,7 @@ export interface INotification extends Document {
   message: string;
   type:
     | "PAYMENT"
+    | "POST_PAYMENT"
     | "POST_APPROVED"
     | "POST_REJECTED"
     | "PACKAGE_PURCHASE"
@@ -39,6 +40,7 @@ const NotificationSchema = new Schema<INotification>(
       type: String,
       enum: [
         "PAYMENT",
+        "POST_PAYMENT",
         "POST_APPROVED",
         "POST_REJECTED",
         "PACKAGE_PURCHASE",

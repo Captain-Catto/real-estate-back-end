@@ -1,7 +1,8 @@
 import { Response } from "express";
-import { Wallet, Payment, User } from "../models";
+import { Wallet, Payment, User, Post } from "../models";
 import { AuthenticatedRequest } from "../middleware";
 import mongoose from "mongoose";
+import { NotificationService } from "../services/NotificationService";
 
 export class WalletController {
   /**
@@ -482,6 +483,10 @@ export class WalletController {
         });
       }
 
+      // Get post details for notification
+      const post = await Post.findById(postId);
+      const postTitle = (post?.title || "Tin đăng bất động sản").toString();
+
       // Get user wallet
       const wallet = await Wallet.findOne({ userId });
 
@@ -527,6 +532,24 @@ export class WalletController {
       // Save changes (no transaction)
       await payment.save();
       await wallet.save();
+
+      // 🔔 Tạo notification thanh toán tin đăng
+      try {
+        console.log(
+          `🔔 Creating post payment notification for user ${userId}, post: ${postTitle}, amount: ${amount}`
+        );
+        await NotificationService.createPostPaymentNotification(
+          userId,
+          postTitle,
+          amount,
+          postId,
+          orderId
+        );
+        console.log(`✅ Post payment notification created successfully`);
+      } catch (error) {
+        console.error("❌ Error sending post payment notification:", error);
+        // Don't fail the transaction for notification error
+      }
 
       return res.status(200).json({
         success: true,

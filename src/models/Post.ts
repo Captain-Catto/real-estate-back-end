@@ -11,7 +11,7 @@ export interface IPost extends Document {
     ward: String;
     street?: String; // optional
   };
-  category: String;
+  category: mongoose.Types.ObjectId;
   tags: [String];
   author: { type: mongoose.Schema.Types.ObjectId; ref: "User" };
   images: [String]; // <-- array string
@@ -40,6 +40,9 @@ export interface IPost extends Document {
   rejectedAt?: Date;
   rejectedBy?: mongoose.Types.ObjectId;
   rejectedReason?: String;
+  // Package expiry fields
+  expiredAt?: Date; // Ngày hết hạn của post
+  originalPackageDuration?: Number; // Lưu duration gốc khi tạo post
   // ... các trường khác
 }
 
@@ -142,10 +145,14 @@ const postSchema = new Schema<IPost>(
       type: String,
       trim: true,
     },
+    packageDuration: {
+      type: Number,
+      min: 0,
+    },
     category: {
-      type: String,
+      type: Schema.Types.ObjectId,
+      ref: "Category",
       required: true,
-      enum: ["apartment", "house", "land", "commercial", "other"],
     },
     tags: [
       {
@@ -205,6 +212,17 @@ const postSchema = new Schema<IPost>(
     project: {
       type: Schema.Types.ObjectId,
       ref: "Project",
+      default: null,
+    },
+    // Package expiry fields
+    expiredAt: {
+      type: Date,
+      default: null,
+      index: true, // Index để query expired posts hiệu quả
+    },
+    originalPackageDuration: {
+      type: Number,
+      min: 0,
       default: null,
     },
   },

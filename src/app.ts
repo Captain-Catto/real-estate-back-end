@@ -17,7 +17,10 @@ mongoose
   .connect(
     process.env.MONGODB_URI || "mongodb://localhost:27017/my-backend-app"
   )
-  .then(() => console.log("Connected to MongoDB"))
+  .then(() => {
+    console.log("Connected to MongoDB");
+    // Post expiry checking is now done at query time, no scheduler needed
+  })
   .catch((error) => console.error("MongoDB connection error:", error));
 
 // Middleware setup

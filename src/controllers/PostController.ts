@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { Post } from "../models";
+import { Post, Package, Category } from "../models";
 import { AuthenticatedRequest } from "../middleware";
 import mongoose from "mongoose";
 import { LocationModel } from "../models/Location";
@@ -70,6 +70,55 @@ export class PostController {
         });
       }
 
+      // Tính toán expiredAt dựa trên packageId và packageDuration
+      let expiredAt = null;
+      let originalPackageDuration = packageDuration;
+
+      if (packageId && packageDuration) {
+        // Lấy thông tin package từ database
+        const packageInfo = await Package.findOne({
+          id: packageId,
+          isActive: true,
+        });
+
+        if (packageInfo) {
+          // Sử dụng duration từ package hiện tại nếu không có packageDuration
+          const durationToUse = packageDuration || packageInfo.duration;
+          originalPackageDuration = durationToUse;
+
+          // Tính ngày hết hạn từ ngày hiện tại
+          const now = new Date();
+          expiredAt = new Date(
+            now.getTime() + durationToUse * 24 * 60 * 60 * 1000
+          );
+
+          console.log(
+            `📅 Post expiry calculated: Package ${packageId}, Duration: ${durationToUse} days, Expires at: ${expiredAt}`
+          );
+        } else {
+          console.warn(
+            `⚠️ Package ${packageId} not found or inactive, post will not have expiry date`
+          );
+        }
+      }
+
+      // Convert category name to ObjectId
+      let categoryId;
+      if (mongoose.Types.ObjectId.isValid(category)) {
+        // If already an ObjectId, use it directly
+        categoryId = category;
+      } else {
+        // If category name, find the category by name
+        const categoryDoc = await Category.findOne({ name: category });
+        if (!categoryDoc) {
+          return res.status(400).json({
+            success: false,
+            message: `Category "${category}" not found`,
+          });
+        }
+        categoryId = categoryDoc._id;
+      }
+
       const post = new Post({
         type,
         title,
@@ -77,7 +126,7 @@ export class PostController {
         content,
         price: price || null,
         location: parsedLocation || null,
-        category,
+        category: categoryId,
         tags: tags || [],
         author: userId,
         images,
@@ -97,13 +146,16 @@ export class PostController {
         email,
         phone,
         packageId,
-        packageDuration,
+        packageDuration: originalPackageDuration,
+        expiredAt,
+        originalPackageDuration,
         project:
           project && mongoose.Types.ObjectId.isValid(project) ? project : null,
       });
 
       await post.save();
       await post.populate("author", "username email avatar");
+      await post.populate("category", "name slug");
 
       res.status(201).json({
         success: true,
@@ -141,8 +193,25 @@ export class PostController {
         filter.$text = { $search: search as string };
       }
 
+      // QUAN TRỌNG: Loại bỏ posts đã hết hạn từ kết quả
+      // Nếu status là 'active', chỉ lấy posts chưa hết hạn
+      if (status === "active" || !status) {
+        const now = new Date();
+        filter.$and = [
+          ...(filter.$and || []),
+          {
+            $or: [
+              { expiredAt: { $exists: false } }, // Posts không có expiry date
+              { expiredAt: null }, // Posts với expiry date = null
+              { expiredAt: { $gt: now } }, // Posts chưa hết hạn
+            ],
+          },
+        ];
+      }
+
       const posts = await Post.find(filter)
         .populate("author", "username email avatar")
+        .populate("category", "name slug")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
@@ -182,10 +251,9 @@ export class PostController {
         });
       }
 
-      const post = await Post.findById(postId).populate(
-        "author",
-        "username email avatar phoneNumber"
-      );
+      const post = await Post.findById(postId)
+        .populate("author", "username email avatar phoneNumber")
+        .populate("category", "name slug");
 
       if (!post) {
         return res.status(404).json({
@@ -257,6 +325,21 @@ export class PostController {
       // Lọc theo trạng thái
       if (status && status !== "all") {
         filter.status = status;
+
+        // Nếu status là 'active', thêm kiểm tra expiry
+        if (status === "active") {
+          const now = new Date();
+          filter.$and = [
+            ...(filter.$and || []),
+            {
+              $or: [
+                { expiredAt: { $exists: false } }, // Posts không có expiry date
+                { expiredAt: null }, // Posts với expiry date = null
+                { expiredAt: { $gt: now } }, // Posts chưa hết hạn
+              ],
+            },
+          ];
+        }
       }
 
       // Lọc theo loại tin (bán/cho thuê)
@@ -306,6 +389,7 @@ export class PostController {
 
       const posts = await Post.find(filter)
         .populate("author", "username email avatar")
+        .populate("category", "name slug")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
@@ -488,13 +572,15 @@ export class PostController {
         post.status = "pending";
         post.approvedAt = undefined;
         post.approvedBy = undefined;
-        console.log(`📝 Post ${postId} status changed from "${oldStatus}" to "pending" after user edit`);
+        console.log(
+          `📝 Post ${postId} status changed from "${oldStatus}" to "pending" after user edit`
+        );
       }
 
       await post.save();
-      
+
       console.log(`✅ Post ${postId} updated successfully by user ${userId}`);
-      
+
       res.json({
         success: true,
         message: "Post updated successfully. Your post will be reviewed again.",
@@ -626,7 +712,7 @@ export class PostController {
 
       // Cập nhật trạng thái bài đăng
       post.status = status;
-      
+
       // Thêm thông tin admin duyệt/từ chối
       if (status === "active") {
         post.approvedAt = new Date();
@@ -641,20 +727,24 @@ export class PostController {
         post.approvedAt = undefined;
         post.approvedBy = undefined;
       }
-      
+
       await post.save();
 
       // Gửi notification tương ứng với trạng thái mới
       try {
         if (status === "active" && oldStatus !== "active") {
-          console.log(`📨 Sending post approval notification for post ${postId}`);
+          console.log(
+            `📨 Sending post approval notification for post ${postId}`
+          );
           await NotificationService.createPostApprovedNotification(
             post.author.toString(),
             post.title.toString(),
             post._id.toString()
           );
         } else if (status === "rejected" && oldStatus !== "rejected") {
-          console.log(`📨 Sending post rejection notification for post ${postId}`);
+          console.log(
+            `📨 Sending post rejection notification for post ${postId}`
+          );
           await NotificationService.createPostRejectedNotification(
             post.author.toString(),
             post.title.toString(),
@@ -667,7 +757,9 @@ export class PostController {
         // Không fail request vì notification error
       }
 
-      console.log(`✅ Post ${postId} status updated from "${oldStatus}" to "${status}" by ${userId}`);
+      console.log(
+        `✅ Post ${postId} status updated from "${oldStatus}" to "${status}" by ${userId}`
+      );
 
       res.json({
         success: true,
@@ -690,39 +782,62 @@ export class PostController {
     if (!locationParam) {
       return null;
     }
+    console.log(`Converting location slug: "${locationParam}"`);
+
     // Nếu đã là code số, trả về luôn
     if (!isNaN(Number(locationParam))) {
+      console.log(`Already a numeric code: ${locationParam}`);
       return locationParam;
     }
 
     // Chuyển đổi từ slug sang code
     try {
-      // Tìm trong tất cả các tỉnh/thành
-      const allLocations = await LocationModel.find({}, "code name slug");
+      // Tìm trong tất cả các tỉnh/thành với districts và wards
+      const allLocations = await LocationModel.find({});
+      console.log(`Found ${allLocations.length} locations to search`);
 
-      // Tạo slug từ tên (đơn giản hóa)
-      const convertToSlug = (name: string): string => {
-        return name
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .replace(/[đĐ]/g, "d")
-          .replace(/([^0-9a-z-\s])/g, "")
-          .replace(/(\s+)/g, "_")
-          .replace(/-+/g, "_");
-      };
+      // Normalize slug để so sánh (chuyển từ hyphen sang underscore)
+      const normalizedSlug = locationParam.replace(/-/g, "_");
+      console.log(`Normalized slug: "${normalizedSlug}"`);
 
-      // Tìm location bằng slug
+      // Tìm trong provinces
       for (const location of allLocations) {
-        const slug =
-          location.get("slug") || convertToSlug(location.get("name") || "");
-        if (slug === locationParam) {
-          if (location.code !== undefined && location.code !== null) {
-            return location.code.toString();
+        // So sánh với codename có sẵn trong database
+        if (location.codename === normalizedSlug) {
+          console.log(
+            `Found province match by codename: "${location.name}" -> code ${location.code}`
+          );
+          return location.code?.toString() || null;
+        }
+
+        // Tìm trong districts
+        if (location.districts) {
+          for (const district of location.districts) {
+            if (district.codename === normalizedSlug) {
+              console.log(
+                `Found district match by codename: "${district.name}" -> code ${district.code}`
+              );
+              return district.code?.toString() || null;
+            }
+
+            // Tìm trong wards
+            if (district.wards) {
+              for (const ward of district.wards) {
+                if (ward.codename === normalizedSlug) {
+                  console.log(
+                    `Found ward match by codename: "${ward.name}" -> code ${ward.code}`
+                  );
+                  return ward.code?.toString() || null;
+                }
+              }
+            }
           }
         }
       }
 
+      console.log(
+        `No match found for slug: "${locationParam}" (normalized: "${normalizedSlug}")`
+      );
       return null;
     } catch (error) {
       console.error("Error converting location slug:", error);
@@ -730,11 +845,82 @@ export class PostController {
     }
   }
 
+  // Tìm ward trong một district cụ thể
+  async convertWardSlugToCodeInDistrict(
+    wardSlug: string,
+    districtCode: string,
+    provinceCode: string
+  ): Promise<string | null> {
+    console.log(
+      `Converting ward slug "${wardSlug}" in district ${districtCode}, province ${provinceCode}`
+    );
+
+    if (!isNaN(Number(wardSlug))) {
+      console.log(`Ward slug is already a numeric code: ${wardSlug}`);
+      return wardSlug;
+    }
+
+    try {
+      const normalizedSlug = wardSlug.replace(/-/g, "_");
+      console.log(`Normalized ward slug: "${normalizedSlug}"`);
+
+      // Tìm province
+      const province = await LocationModel.findOne({
+        code: Number(provinceCode),
+      });
+
+      if (!province) {
+        console.log(`Province not found for code: ${provinceCode}`);
+        return null;
+      }
+
+      // Tìm district trong province
+      const district = province.districts?.find(
+        (d: any) => d.code === Number(districtCode)
+      );
+
+      if (!district) {
+        console.log(
+          `District not found for code: ${districtCode} in province ${provinceCode}`
+        );
+        return null;
+      }
+
+      // Tìm ward trong district
+      const ward = district.wards?.find(
+        (w: any) => w.codename === normalizedSlug
+      );
+
+      if (ward) {
+        console.log(
+          `Found ward match in correct district: "${ward.name}" -> code ${ward.code}`
+        );
+        return ward.code?.toString() || null;
+      }
+
+      console.log(
+        `No ward found with codename "${normalizedSlug}" in district ${districtCode}`
+      );
+      return null;
+    } catch (error) {
+      console.error("Error converting ward slug to code:", error);
+      return null;
+    }
+  }
+
   // Lấy bài đăng theo api filters
   async searchPosts(req: AuthenticatedRequest, res: Response) {
     try {
-      const { type, category, city, districts, price, area, propertyId } =
-        req.query;
+      const {
+        type,
+        category,
+        city,
+        districts,
+        wards,
+        price,
+        area,
+        propertyId,
+      } = req.query;
 
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
@@ -746,6 +932,7 @@ export class PostController {
         category,
         city,
         districts,
+        wards,
         price,
         area,
         propertyId,
@@ -754,30 +941,111 @@ export class PostController {
       // 2. Xây dựng filter TRƯỚC khi truy vấn
       const filter: any = { status: "active" };
 
+      // QUAN TRỌNG: Loại bỏ posts đã hết hạn
+      const now = new Date();
+      filter.$and = [
+        {
+          $or: [
+            { expiredAt: { $exists: false } }, // Posts không có expiry date
+            { expiredAt: null }, // Posts với expiry date = null
+            { expiredAt: { $gt: now } }, // Posts chưa hết hạn
+          ],
+        },
+      ];
+
       if (type) filter.type = type.toString();
       if (category) filter.category = category.toString();
 
+      // Lưu lại cityCode để sử dụng cho ward lookup
+      let cityCode: string | null = null;
+
       // Xử lý city có thể là slug hoặc code
       if (city) {
-        const cityCode = await this.convertLocationSlugToCode(city.toString());
+        cityCode = await this.convertLocationSlugToCode(city.toString());
         if (cityCode) {
-          filter["location.province"] = cityCode;
+          // Tìm cả theo code và tên
+          const cityLocation = await LocationModel.findOne({
+            code: Number(cityCode),
+          });
+          const cityName = cityLocation?.name;
+
+          if (cityName) {
+            filter["$or"] = [
+              { "location.province": cityCode },
+              { "location.province": cityName },
+            ];
+          } else {
+            filter["location.province"] = cityCode;
+          }
         } else {
           filter["location.province"] = city.toString();
         }
       }
 
+      // Lưu lại districtCodes để sử dụng cho ward lookup
+      let districtCodes: string[] = [];
+
       // Xử lý districts có thể là slug hoặc code
       if (districts) {
+        console.log("Processing districts:", districts);
         const districtsList = districts.toString().split(",");
         if (districtsList.length > 0) {
-          const districtCodes = await Promise.all(
-            districtsList.map((d) => this.convertLocationSlugToCode(d))
+          const codes = await Promise.all(
+            districtsList.map(async (d) => {
+              const code = await this.convertLocationSlugToCode(d);
+              console.log(`District slug "${d}" -> code "${code}"`);
+              return code;
+            })
           );
-          const validCodes = districtCodes.filter(Boolean);
+          districtCodes = codes.filter(Boolean) as string[];
 
-          if (validCodes.length > 0) {
-            filter["location.district"] = { $in: validCodes };
+          if (districtCodes.length > 0) {
+            filter["location.district"] = { $in: districtCodes };
+            console.log(
+              "Applied district filter:",
+              filter["location.district"]
+            );
+          }
+        }
+      }
+
+      // Xử lý wards có thể là slug hoặc code - QUAN TRỌNG: Tìm trong district cụ thể
+      if (wards) {
+        console.log("Processing wards:", wards);
+        const wardsList = wards.toString().split(",");
+        if (wardsList.length > 0) {
+          const wardCodes: string[] = [];
+
+          for (const w of wardsList) {
+            // Nếu có cả cityCode và districtCodes, tìm ward trong district cụ thể
+            if (cityCode && districtCodes.length > 0) {
+              for (const districtCode of districtCodes) {
+                const code = await this.convertWardSlugToCodeInDistrict(
+                  w,
+                  districtCode,
+                  cityCode
+                );
+                if (code) {
+                  wardCodes.push(code);
+                  console.log(
+                    `Ward slug "${w}" -> code "${code}" in district ${districtCode}`
+                  );
+                  break; // Tìm thấy rồi thì dừng lại
+                }
+              }
+            } else {
+              // Fallback về cách cũ nếu không có context
+              const code = await this.convertLocationSlugToCode(w);
+              if (code) {
+                wardCodes.push(code);
+                console.log(`Ward slug "${w}" -> code "${code}" (fallback)`);
+              }
+            }
+          }
+
+          if (wardCodes.length > 0) {
+            filter["location.ward"] = { $in: wardCodes };
+            console.log("Applied ward filter:", filter["location.ward"]);
           }
         }
       }
@@ -828,9 +1096,20 @@ export class PostController {
 
       // 4. Thực hiện truy vấn SAU KHI đã xây dựng filter đầy đủ
       const totalPosts = await Post.countDocuments(filter);
+      console.log(`Total posts found with filter: ${totalPosts}`);
 
-      // Nếu không tìm thấy kết quả, trả về mảng rỗng
+      // Debug: Check some existing posts to see their location format
       if (totalPosts === 0) {
+        console.log("No posts found, checking existing posts format...");
+        const samplePosts = await Post.find({ status: "active" }).limit(3);
+        console.log(
+          "Sample posts locations:",
+          samplePosts.map((p) => ({
+            id: p._id,
+            location: p.location,
+          }))
+        );
+
         return res.json({
           success: true,
           data: {
@@ -841,7 +1120,15 @@ export class PostController {
               totalItems: 0,
               itemsPerPage: limit,
             },
-            searchCriteria: { type, category, city, districts, price, area },
+            searchCriteria: {
+              type,
+              category,
+              city,
+              districts,
+              wards,
+              price,
+              area,
+            },
           },
         });
       }
@@ -905,11 +1192,160 @@ export class PostController {
             totalItems: totalPosts,
             itemsPerPage: limit,
           },
-          searchCriteria: { type, category, city, districts, price, area },
+          searchCriteria: {
+            type,
+            category,
+            city,
+            districts,
+            wards,
+            price,
+            area,
+          },
         },
       });
     } catch (error) {
       console.error("Search posts error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  // Utility method để mark expired posts khi cần
+  async markExpiredPosts() {
+    try {
+      const now = new Date();
+      const result = await Post.updateMany(
+        {
+          status: "active",
+          expiredAt: { $lt: now, $ne: null },
+        },
+        {
+          $set: { status: "expired" },
+        }
+      );
+
+      console.log(`Marked ${result.modifiedCount} posts as expired`);
+      return result.modifiedCount;
+    } catch (error) {
+      console.error("Error marking expired posts:", error);
+      return 0;
+    }
+  }
+
+  // Admin endpoint để manually check và mark expired posts
+  async checkExpiredPosts(req: AuthenticatedRequest, res: Response) {
+    try {
+      // Chỉ admin mới có thể sử dụng
+      if (req.user?.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. Admin only.",
+        });
+      }
+
+      const expiredCount = await this.markExpiredPosts();
+
+      res.json({
+        success: true,
+        message: `Successfully checked and marked ${expiredCount} expired posts`,
+        data: {
+          expiredCount,
+        },
+      });
+    } catch (error) {
+      console.error("Check expired posts error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  // Gia hạn tin đăng
+  async extendPost(req: AuthenticatedRequest, res: Response) {
+    try {
+      const userId = req.user?.userId;
+      const { postId } = req.params;
+      const { packageId } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "User not authenticated",
+        });
+      }
+
+      if (!packageId) {
+        return res.status(400).json({
+          success: false,
+          message: "Package ID is required",
+        });
+      }
+
+      // Tìm post của user
+      const post = await Post.findOne({
+        _id: postId,
+        author: userId,
+      });
+
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Post not found or you don't have permission",
+        });
+      }
+
+      // Tìm package info
+      const packageInfo = await Package.findById(packageId);
+      if (!packageInfo || !packageInfo.isActive) {
+        return res.status(404).json({
+          success: false,
+          message: "Package not found or inactive",
+        });
+      }
+
+      // Tính toán expiry date mới
+      const now = new Date();
+      const currentExpiry = post.expiredAt ? new Date(post.expiredAt) : now;
+
+      // Nếu post đã hết hạn, tính từ hiện tại. Nếu chưa, tính từ expiry date hiện tại
+      const startDate = currentExpiry > now ? currentExpiry : now;
+      const newExpiryDate = new Date(
+        startDate.getTime() + packageInfo.duration * 24 * 60 * 60 * 1000
+      );
+
+      // Cập nhật post
+      post.expiredAt = newExpiryDate;
+      post.packageId = packageId;
+      post.originalPackageDuration = packageInfo.duration;
+
+      // Nếu post đã expired, set lại status thành active
+      if (post.status === "expired") {
+        post.status = "active";
+      }
+
+      await post.save();
+
+      console.log(
+        `📅 Post extended: ${post.title}, Package: ${packageInfo.name}, New expiry: ${newExpiryDate}`
+      );
+
+      res.json({
+        success: true,
+        message: "Post extended successfully",
+        data: {
+          post: {
+            _id: post._id,
+            expiredAt: post.expiredAt,
+            packageId: post.packageId,
+            status: post.status,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Extend post error:", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",

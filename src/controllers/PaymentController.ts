@@ -871,21 +871,20 @@ export class PaymentController {
         }
       }
 
-      // Send notification for package purchase
-      if (!isTopup && payment.metadata?.packageName) {
-        try {
-          await NotificationService.createPackagePurchaseNotification(
-            payment.userId,
-            payment.metadata.packageName,
-            payment.amount,
-            payment.orderId,
-            payment.metadata.packageDuration || 30
-          );
-        } catch (error) {
-          console.error("Error sending package purchase notification:", error);
-          // Don't fail the transaction for notification error
-        }
-      }
+      // ❌ XÓA PACKAGE PURCHASE NOTIFICATION - KHÔNG CẦN THIẾT
+      // if (!isTopup && payment.metadata?.packageName) {
+      //   try {
+      //     await NotificationService.createPackagePurchaseNotification(
+      //       payment.userId,
+      //       payment.metadata.packageName,
+      //       payment.amount,
+      //       payment.orderId,
+      //       payment.metadata.packageDuration || 30
+      //     );
+      //   } catch (error) {
+      //     console.error("Error sending package purchase notification:", error);
+      //   }
+      // }
 
       return true;
     } catch (error) {

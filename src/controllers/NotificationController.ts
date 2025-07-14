@@ -1,8 +1,16 @@
 import { Response } from "express";
 import { Notification, INotification } from "../models/Notification";
+import { User } from "../models/User";
 import { AuthenticatedRequest } from "../middleware";
 import mongoose from "mongoose";
 
+/**
+ * 🔔 SIMPLIFIED NOTIFICATION CONTROLLER
+ * Chỉ giữ lại 3 loại thông báo cần thiết:
+ * 1. 💰 PAYMENT - Nạp tiền thành công
+ * 2. ✅ POST_APPROVED - Tin đăng được duyệt
+ * 3. ❌ POST_REJECTED - Tin đăng bị từ chối
+ */
 export class NotificationController {
   // Lấy danh sách notification của user
   static async getNotifications(req: AuthenticatedRequest, res: Response) {
@@ -20,10 +28,13 @@ export class NotificationController {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      // Build query
+      // Build query - CHỈ CHO PHÉP 3 LOẠI THÔNG BÁO
       const query: any = { userId: new mongoose.Types.ObjectId(userId) };
 
-      if (type) {
+      if (
+        type &&
+        ["PAYMENT", "POST_APPROVED", "POST_REJECTED"].includes(type)
+      ) {
         query.type = type;
       }
 
@@ -103,14 +114,14 @@ export class NotificationController {
 
       res.json({
         success: true,
-        data: notification,
-        message: "Đã đánh dấu thông báo đã đọc",
+        message: "Đã đánh dấu đã đọc",
+        data: { notification },
       });
     } catch (error) {
       console.error("Error marking notification as read:", error);
       res.status(500).json({
         success: false,
-        message: "Lỗi khi đánh dấu thông báo",
+        message: "Lỗi khi đánh dấu đã đọc",
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
@@ -135,16 +146,14 @@ export class NotificationController {
 
       res.json({
         success: true,
-        data: {
-          modifiedCount: result.modifiedCount,
-        },
         message: `Đã đánh dấu ${result.modifiedCount} thông báo đã đọc`,
+        data: { updatedCount: result.modifiedCount },
       });
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
       res.status(500).json({
         success: false,
-        message: "Lỗi khi đánh dấu tất cả thông báo",
+        message: "Lỗi khi đánh dấu tất cả đã đọc",
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
@@ -198,7 +207,7 @@ export class NotificationController {
     userId: string | mongoose.Types.ObjectId,
     title: string,
     message: string,
-    type: INotification["type"],
+    type: "PAYMENT" | "POST_APPROVED" | "POST_REJECTED", // CHỈ 3 LOẠI
     data?: any
   ): Promise<INotification | null> {
     try {
@@ -248,7 +257,8 @@ export class NotificationController {
     }
   }
 
-  // Helper methods for creating specific notification types
+  // ===== CHỈ GIỮ LẠI 3 HELPER METHODS CẦN THIẾT =====
+
   static async createPaymentNotification(
     userId: string | mongoose.Types.ObjectId,
     amount: number,
@@ -256,7 +266,7 @@ export class NotificationController {
   ) {
     return await NotificationController.createNotification(
       userId,
-      "Nạp tiền thành công",
+      "💰 Nạp tiền thành công",
       `Bạn đã nạp thành công ${amount.toLocaleString(
         "vi-VN"
       )} VNĐ vào tài khoản`,
@@ -272,7 +282,7 @@ export class NotificationController {
   ) {
     return await NotificationController.createNotification(
       userId,
-      "Tin đăng được duyệt",
+      "✅ Tin đăng được duyệt",
       `Tin đăng "${postTitle}" của bạn đã được duyệt và hiển thị công khai`,
       "POST_APPROVED",
       { postId, postTitle }
@@ -287,7 +297,7 @@ export class NotificationController {
   ) {
     return await NotificationController.createNotification(
       userId,
-      "Tin đăng bị từ chối",
+      "❌ Tin đăng bị từ chối",
       `Tin đăng "${postTitle}" của bạn đã bị từ chối${
         reason ? `: ${reason}` : ""
       }`,
@@ -296,178 +306,10 @@ export class NotificationController {
     );
   }
 
-  static async createPackagePurchaseNotification(
-    userId: string | mongoose.Types.ObjectId,
-    packageName: string,
-    amount: number,
-    paymentId?: string
-  ) {
-    return await NotificationController.createNotification(
-      userId,
-      "Mua gói tin thành công",
-      `Bạn đã mua thành công gói "${packageName}" với giá ${amount.toLocaleString(
-        "vi-VN"
-      )} VNĐ`,
-      "PACKAGE_PURCHASE",
-      { packageName, amount, paymentId }
-    );
-  }
-
-  static async createSystemNotification(
-    userId: string | mongoose.Types.ObjectId,
-    title: string,
-    message: string,
-    data?: any
-  ) {
-    return await NotificationController.createNotification(
-      userId,
-      title,
-      message,
-      "SYSTEM",
-      data
-    );
-  }
-
-  static async createInterestNotification(
-    userId: string | mongoose.Types.ObjectId,
-    postTitle: string,
-    postId: string
-  ) {
-    return await NotificationController.createNotification(
-      userId,
-      "Có người quan tâm tin đăng",
-      `Có người quan tâm đến tin đăng "${postTitle}" của bạn`,
-      "INTEREST",
-      { postId, postTitle }
-    );
-  }
-
-  // Demo notification với action buttons (chỉ dùng cho testing)
-  static async createDemoNotifications(
-    req: AuthenticatedRequest,
-    res: Response
-  ) {
-    try {
-      const userId = req.user?.userId;
-
-      console.log("Creating demo notifications for user:", userId);
-
-      if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-
-      // Import NotificationService
-      const { NotificationService } = await import(
-        "../services/NotificationService"
-      );
-
-      // Tạo các notification demo
-      const promises = [
-        // 1. Top-up Success
-        NotificationService.createTopUpSuccessNotification(
-          userId,
-          500000,
-          `DEMO_ORDER_${Date.now()}_1`
-        ),
-
-        // 2. Package Purchase
-        NotificationService.createPackagePurchaseNotification(
-          userId,
-          "Gói VIP 30 ngày",
-          300000,
-          `DEMO_ORDER_${Date.now()}_2`,
-          30
-        ),
-
-        // 3. Post Approved
-        NotificationService.createPostApprovedNotification(
-          userId,
-          "Bán căn hộ chung cư Vinhomes Central Park - View sông tuyệt đẹp",
-          "demo_post_approved_id"
-        ),
-
-        // 4. Post Rejected
-        NotificationService.createPostRejectedNotification(
-          userId,
-          "Cho thuê nhà nguyên căn Quận 1",
-          "demo_post_rejected_id",
-          "Thiếu thông tin giá cả và hình ảnh mô tả"
-        ),
-
-        // 5. Interest
-        NotificationService.createInterestNotification(
-          userId,
-          "Bán biệt thự Thảo Điền - Khu compound cao cấp",
-          "demo_post_interest_id",
-          "Nguyễn Văn Demo"
-        ),
-
-        // 6. System
-        NotificationService.createSystemNotification(
-          userId,
-          "🎉 Cập nhật tính năng mới",
-          "Hệ thống vừa được cập nhật với nhiều tính năng mới! Hãy khám phá ngay để có trải nghiệm tốt nhất.",
-          {
-            actionButton: {
-              text: "Khám phá ngay",
-              link: "/nguoi-dung/dashboard",
-              style: "primary",
-            },
-          }
-        ),
-      ];
-
-      await Promise.all(promises);
-
-      console.log("Demo notifications created successfully");
-
-      res.json({
-        success: true,
-        message: "Đã tạo 6 demo notifications với action buttons",
-        data: {
-          created: 6,
-          types: [
-            {
-              type: "PAYMENT",
-              title: "Nạp tiền thành công",
-              actionButton: "Xem ví",
-            },
-            {
-              type: "PACKAGE_PURCHASE",
-              title: "Mua gói tin thành công",
-              actionButton: "Đăng tin ngay",
-            },
-            {
-              type: "POST_APPROVED",
-              title: "Tin đăng được duyệt",
-              actionButton: "Xem tin đăng",
-            },
-            {
-              type: "POST_REJECTED",
-              title: "Tin đăng bị từ chối",
-              actionButton: "Chỉnh sửa tin",
-            },
-            {
-              type: "INTEREST",
-              title: "Có người quan tâm",
-              actionButton: "Xem tin đăng",
-            },
-            {
-              type: "SYSTEM",
-              title: "Thông báo hệ thống",
-              actionButton: "Khám phá ngay",
-            },
-          ],
-        },
-      });
-
-      console.log("Demo notifications created successfully");
-    } catch (error) {
-      console.error("Error creating demo notifications:", error);
-      res.status(500).json({
-        success: false,
-        message: "Lỗi tạo demo notifications",
-      });
-    }
-  }
+  // ===== XÓA TẤT CẢ ADMIN METHODS =====
+  // Không cần admin tạo thông báo thủ công nữa
+  // Tất cả thông báo đều tự động từ hệ thống:
+  // - PAYMENT: tự động từ PaymentController
+  // - POST_APPROVED: tự động từ AdminController.approvePost
+  // - POST_REJECTED: tự động từ AdminController.rejectPost
 }

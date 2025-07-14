@@ -31,12 +31,16 @@ export const authenticateUser = (
   console.log("=== AUTHENTICATION MIDDLEWARE ===");
 
   const authHeader = req.header("Authorization");
+  const cookieToken = req.cookies?.accessToken;
 
   const token =
     authHeader && authHeader.startsWith("Bearer ")
       ? authHeader.substring(7)
-      : null;
+      : cookieToken;
+
   console.log("Extracted token:", token ? "Token present" : "No token");
+  console.log("From header:", authHeader ? "Yes" : "No");
+  console.log("From cookie:", cookieToken ? "Yes" : "No");
 
   if (!token) {
     console.log("❌ No token provided");
