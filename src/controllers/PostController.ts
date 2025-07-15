@@ -107,16 +107,21 @@ export class PostController {
       if (mongoose.Types.ObjectId.isValid(category)) {
         // If already an ObjectId, use it directly
         categoryId = category;
+        console.log(`✅ Category is already ObjectId: ${categoryId}`);
       } else {
         // If category name, find the category by name
+        console.log(`🔍 Looking for category with name: "${category}"`);
         const categoryDoc = await Category.findOne({ name: category });
+        console.log(`📝 Category found:`, categoryDoc);
         if (!categoryDoc) {
+          console.log(`❌ Category "${category}" not found in database`);
           return res.status(400).json({
             success: false,
             message: `Category "${category}" not found`,
           });
         }
         categoryId = categoryDoc._id;
+        console.log(`✅ Category ID found: ${categoryId}`);
       }
 
       const post = new Post({
@@ -265,22 +270,55 @@ export class PostController {
       // Nếu location là code, tìm name trong LocationModel
       let locationWithName = post.location;
 
-      const province = await LocationModel.findOne({
-        code: Number(post.location.province),
-      });
-      const district = province?.districts.find(
-        (d: any) => d.code === Number(post.location.district)
-      );
-      const ward = district?.wards.find(
-        (w: any) => w.code === Number(post.location.ward)
-      );
+      try {
+        // Chỉ convert nếu giá trị là số hợp lệ
+        const provinceCode = post.location.province;
+        const districtCode = post.location.district;
+        const wardCode = post.location.ward;
 
-      locationWithName = {
-        province: province?.name || post.location.province,
-        district: district?.name || post.location.district,
-        ward: ward?.name || post.location.ward,
-        street: post.location.street || "",
-      };
+        if (provinceCode && !isNaN(Number(provinceCode))) {
+          const province = await LocationModel.findOne({
+            code: Number(provinceCode),
+          });
+
+          if (province) {
+            let districtName = districtCode;
+            let wardName = wardCode;
+
+            if (districtCode && !isNaN(Number(districtCode))) {
+              const district = province.districts.find(
+                (d: any) => d.code === Number(districtCode)
+              );
+              if (district) {
+                districtName = district.name || districtCode;
+
+                if (wardCode && !isNaN(Number(wardCode))) {
+                  const ward = district.wards.find(
+                    (w: any) => w.code === Number(wardCode)
+                  );
+                  if (ward) {
+                    wardName = ward.name || wardCode;
+                  }
+                }
+              }
+            }
+
+            locationWithName = {
+              province: province.name || provinceCode,
+              district: districtName || districtCode,
+              ward: wardName || wardCode,
+              street: post.location.street || "",
+            };
+          }
+        }
+      } catch (locationError) {
+        console.error(
+          "Error converting location codes to names:",
+          locationError
+        );
+        // Fallback to original location if conversion fails
+        locationWithName = post.location;
+      }
 
       res.json({
         success: true,
@@ -554,12 +592,19 @@ export class PostController {
         post.package = updates.package;
       }
 
+      // Handle images field specifically
+      if (updates.images && Array.isArray(updates.images)) {
+        post.images = updates.images;
+        console.log(`📸 Updated post images: ${updates.images.length} images`);
+      }
+
       const allowedUpdateKeys = Object.keys(updates).filter(
         (key) =>
           key !== "category" &&
           key !== "type" &&
           key !== "status" &&
-          key !== "package"
+          key !== "package" &&
+          key !== "images" // Exclude images as we handle it separately
       );
       allowedUpdateKeys.forEach((key) => {
         // Use type assertion to avoid TS error
@@ -567,8 +612,23 @@ export class PostController {
       });
 
       // QUAN TRỌNG: Chuyển trạng thái về pending để admin duyệt lại
-      // Trừ khi tin đang ở trạng thái draft hoặc đã bị reject
-      if (post.status !== "draft" && post.status !== "rejected") {
+      // Đặc biệt quan trọng: Khi tin bị từ chối và user sửa lại, cần chuyển về pending
+      if (post.status === "rejected") {
+        post.status = "pending";
+        post.approvedAt = undefined;
+        post.approvedBy = undefined;
+        // GIỮ LẠI thông tin từ chối để người dùng tham khảo và admin theo dõi lịch sử
+        // post.rejectedAt = undefined;
+        // post.rejectedBy = undefined;
+        // post.rejectedReason = undefined;
+        console.log(
+          `📝 Post ${postId} status changed from "rejected" to "pending" after user edit and resubmission`
+        );
+        console.log(
+          `📋 Keeping rejection history: Rejected at ${post.rejectedAt} by ${post.rejectedBy} for reason: ${post.rejectedReason}`
+        );
+      } else if (post.status !== "draft") {
+        // Các trạng thái khác (active, pending, etc.) cũng chuyển về pending khi edit
         post.status = "pending";
         post.approvedAt = undefined;
         post.approvedBy = undefined;
@@ -640,12 +700,21 @@ export class PostController {
         post.package = updates.package;
       }
 
+      // Handle images field specifically
+      if (updates.images && Array.isArray(updates.images)) {
+        post.images = updates.images;
+        console.log(
+          `📸 Updated post images during resubmit: ${updates.images.length} images`
+        );
+      }
+
       const allowedUpdateKeys = Object.keys(updates).filter(
         (key) =>
           key !== "category" &&
           key !== "type" &&
           key !== "status" &&
           key !== "package" &&
+          key !== "images" && // Exclude images as we handle it separately
           key !== "author" &&
           key !== "createdAt" &&
           key !== "updatedAt"
@@ -656,10 +725,15 @@ export class PostController {
 
       // Đặt lại trạng thái về pending (chờ duyệt)
       post.status = "pending"; // pending
-      post.rejectedAt = undefined;
-      post.rejectedBy = undefined;
-      post.rejectedReason = undefined;
+      // GIỮ LẠI thông tin từ chối để theo dõi lịch sử
+      // post.rejectedAt = undefined;
+      // post.rejectedBy = undefined;
+      // post.rejectedReason = undefined;
       post.updatedAt = new Date();
+
+      console.log(
+        `📝 Post ${postId} resubmitted for approval. Previous rejection: ${post.rejectedReason}`
+      );
 
       await post.save();
 
@@ -1349,6 +1423,140 @@ export class PostController {
       res.status(500).json({
         success: false,
         message: "Internal server error",
+      });
+    }
+  }
+
+  // Get similar posts based on project or location
+  async getSimilarPosts(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { postId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 6;
+
+      // Get the current post
+      const currentPost = await Post.findById(postId)
+        .populate("category", "name slug")
+        .populate("author", "name email");
+
+      if (!currentPost) {
+        return res.status(404).json({
+          success: false,
+          message: "Bài viết không tồn tại",
+        });
+      }
+
+      let similarPosts: any[] = [];
+
+      // Priority 1: Same project (if exists)
+      if (currentPost.project) {
+        console.log("🔍 Finding posts in same project:", currentPost.project);
+        similarPosts = await Post.find({
+          _id: { $ne: postId }, // Exclude current post
+          project: currentPost.project,
+          status: "approved",
+        })
+          .populate("category", "name slug")
+          .populate("author", "name email")
+          .populate("project", "name slug")
+          .sort({ createdAt: -1 })
+          .limit(limit);
+      }
+
+      // Priority 2: Same ward if not enough posts from project
+      if (similarPosts.length < limit && currentPost.location?.ward) {
+        console.log(
+          "🔍 Finding posts in same ward:",
+          currentPost.location.ward
+        );
+        const wardPosts = await Post.find({
+          _id: { $ne: postId },
+          "location.ward": currentPost.location.ward,
+          status: "approved",
+          ...(currentPost.project
+            ? { project: { $ne: currentPost.project } }
+            : {}),
+        })
+          .populate("category", "name slug")
+          .populate("author", "name email")
+          .populate("project", "name slug")
+          .sort({ createdAt: -1 })
+          .limit(limit - similarPosts.length);
+
+        similarPosts = [...similarPosts, ...wardPosts];
+      }
+
+      // Priority 3: Same district if still not enough posts
+      if (similarPosts.length < limit && currentPost.location?.district) {
+        console.log(
+          "🔍 Finding posts in same district:",
+          currentPost.location.district
+        );
+        const districtPosts = await Post.find({
+          _id: { $ne: postId },
+          "location.district": currentPost.location.district,
+          status: "approved",
+          ...(currentPost.project
+            ? { project: { $ne: currentPost.project } }
+            : {}),
+          ...(currentPost.location.ward
+            ? { "location.ward": { $ne: currentPost.location.ward } }
+            : {}),
+        })
+          .populate("category", "name slug")
+          .populate("author", "name email")
+          .populate("project", "name slug")
+          .sort({ createdAt: -1 })
+          .limit(limit - similarPosts.length);
+
+        similarPosts = [...similarPosts, ...districtPosts];
+      }
+
+      // Priority 4: Same category and type if still not enough
+      if (similarPosts.length < limit) {
+        console.log("🔍 Finding posts with same category and type");
+        const categoryPosts = await Post.find({
+          _id: { $ne: postId },
+          category: currentPost.category,
+          type: currentPost.type,
+          status: "approved",
+        })
+          .populate("category", "name slug")
+          .populate("author", "name email")
+          .populate("project", "name slug")
+          .sort({ createdAt: -1 })
+          .limit(limit - similarPosts.length);
+
+        similarPosts = [...similarPosts, ...categoryPosts];
+      }
+
+      // Remove duplicates and limit results
+      const uniquePosts = similarPosts
+        .filter(
+          (post, index, self) =>
+            index ===
+            self.findIndex((p) => p._id.toString() === post._id.toString())
+        )
+        .slice(0, limit);
+
+      res.json({
+        success: true,
+        data: {
+          posts: uniquePosts,
+          total: uniquePosts.length,
+          criteria: {
+            hasProject: !!currentPost.project,
+            ward: currentPost.location?.ward,
+            district: currentPost.location?.district,
+            category: currentPost.category,
+            type: currentPost.type,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Get similar posts error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi lấy tin đăng tương tự",
       });
     }
   }

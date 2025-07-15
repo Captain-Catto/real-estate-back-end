@@ -92,6 +92,12 @@ export function setRoutes(app: Express) {
   );
   postRouter.get("/:postId", postController.getPostById.bind(postController));
 
+  // Get similar posts
+  postRouter.get(
+    "/:postId/similar",
+    postController.getSimilarPosts.bind(postController)
+  );
+
   postRouter.post(
     "/",
     authenticateUser,
