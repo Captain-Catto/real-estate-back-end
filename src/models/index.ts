@@ -10,3 +10,9 @@ export { Project, IProject } from "./Project";
 export { Package, IPackage } from "./Package";
 export { default as UserLog, IUserLog } from "./UserLog";
 export { Notification, INotification } from "./Notification";
+export {
+  SidebarConfig,
+  ISidebarConfig,
+  ISidebarMenuItem,
+} from "./SidebarConfig";
+export { News, INews } from "./News";

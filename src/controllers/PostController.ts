@@ -1086,7 +1086,9 @@ export class PostController {
       // Xử lý wards có thể là slug hoặc code - QUAN TRỌNG: Tìm trong district cụ thể
       if (wards) {
         console.log("Processing wards:", wards);
+        console.log("Wards type:", typeof wards);
         const wardsList = wards.toString().split(",");
+        console.log("Wards after split:", wardsList);
         if (wardsList.length > 0) {
           const wardCodes: string[] = [];
 
@@ -1220,31 +1222,49 @@ export class PostController {
         posts.map(async (post) => {
           const loc = post.location;
           let locationWithName = loc;
-          if (
-            loc &&
-            loc.province &&
-            loc.district &&
-            loc.ward &&
-            !isNaN(Number(loc.province)) &&
-            !isNaN(Number(loc.district)) &&
-            !isNaN(Number(loc.ward))
-          ) {
-            const province = await LocationModel.findOne({
-              code: Number(loc.province),
-            });
-            const district = province?.districts.find(
-              (d: any) => d.code === Number(loc.district)
-            );
-            const ward = district?.wards.find(
-              (w: any) => w.code === Number(loc.ward)
-            );
-            locationWithName = {
-              province: province?.name || loc.province,
-              district: district?.name || loc.district,
-              ward: ward?.name || loc.ward,
-              street: loc.street || "",
-            };
+
+          // Convert location codes to names if we have at least province and district
+          if (loc && loc.province && loc.district) {
+            // Check if province is a numeric code
+            if (!isNaN(Number(loc.province))) {
+              const province = await LocationModel.findOne({
+                code: Number(loc.province),
+              });
+
+              if (province) {
+                let districtName = loc.district;
+                let wardName = loc.ward || "";
+
+                // Convert district code to name if it's numeric
+                if (!isNaN(Number(loc.district))) {
+                  const district = province.districts.find(
+                    (d: any) => d.code === Number(loc.district)
+                  );
+                  if (district) {
+                    districtName = district.name || loc.district;
+
+                    // Convert ward code to name if it exists and is numeric
+                    if (loc.ward && !isNaN(Number(loc.ward))) {
+                      const ward = district.wards.find(
+                        (w: any) => w.code === Number(loc.ward)
+                      );
+                      if (ward) {
+                        wardName = ward.name || loc.ward;
+                      }
+                    }
+                  }
+                }
+
+                locationWithName = {
+                  province: province.name || loc.province,
+                  district: districtName,
+                  ward: wardName,
+                  street: loc.street || "",
+                };
+              }
+            }
           }
+
           return {
             ...post.toObject(),
             location: locationWithName,
@@ -1433,6 +1453,10 @@ export class PostController {
       const { postId } = req.params;
       const limit = parseInt(req.query.limit as string) || 6;
 
+      console.log(
+        `🔍 Getting similar posts for post ID: ${postId} with limit: ${limit}`
+      );
+
       // Get the current post
       const currentPost = await Post.findById(postId)
         .populate("category", "name slug")
@@ -1445,88 +1469,171 @@ export class PostController {
         });
       }
 
-      let similarPosts: any[] = [];
+      // Log để debug thông tin vị trí
+      console.log(
+        "Current post location:",
+        JSON.stringify(currentPost.location)
+      );
 
-      // Priority 1: Same project (if exists)
+      let similarPosts: any[] = [];
+      let searchCriteria = ""; // Lưu thông tin tiêu chí tìm kiếm đã sử dụng
+
+      // Nếu là bài đăng thuộc dự án thì chỉ tìm các bài đăng cùng dự án
       if (currentPost.project) {
-        console.log("🔍 Finding posts in same project:", currentPost.project);
-        similarPosts = await Post.find({
+        console.log(
+          "🔍 Bài đăng thuộc dự án. Tìm bài đăng cùng dự án:",
+          currentPost.project
+        );
+
+        // Build the query for project search
+        const projectQuery = {
           _id: { $ne: postId }, // Exclude current post
           project: currentPost.project,
-          status: "approved",
-        })
+          status: "active",
+        };
+
+        // Log the project search query
+        console.log("Project search query:", JSON.stringify(projectQuery));
+
+        // Count posts matching this criteria before executing the full query
+        const projectPostsCount = await Post.countDocuments(projectQuery);
+        console.log(
+          `Found ${projectPostsCount} total posts matching project criteria`
+        );
+
+        similarPosts = await Post.find(projectQuery)
           .populate("category", "name slug")
           .populate("author", "name email")
           .populate("project", "name slug")
           .sort({ createdAt: -1 })
           .limit(limit);
+
+        console.log(`Retrieved ${similarPosts.length} posts in same project`);
+        searchCriteria = "project";
+      }
+      // Nếu không phải là bài đăng thuộc dự án thì tìm theo vị trí
+      else {
+        // Tìm kiếm theo phường trước
+        if (currentPost.location?.ward) {
+          console.log(
+            "🔍 Bài đăng không thuộc dự án. Tìm bài đăng cùng phường:",
+            currentPost.location.ward
+          );
+
+          // Build the query for ward search
+          const wardQuery = {
+            _id: { $ne: postId },
+            "location.ward": currentPost.location.ward,
+            status: "active",
+            project: null, // Chỉ tìm các bài đăng không thuộc dự án
+          };
+
+          // Log the ward search query
+          console.log("Ward search query:", JSON.stringify(wardQuery));
+
+          // Count posts matching this criteria before executing the full query
+          const wardPostsCount = await Post.countDocuments(wardQuery);
+          console.log(
+            `Found ${wardPostsCount} total posts matching ward criteria`
+          );
+
+          similarPosts = await Post.find(wardQuery)
+            .populate("category", "name slug")
+            .populate("author", "name email")
+            .populate("project", "name slug")
+            .sort({ createdAt: -1 })
+            .limit(limit);
+
+          console.log(`Retrieved ${similarPosts.length} posts in same ward`);
+          searchCriteria = "ward";
+        }
+
+        // Nếu không đủ bài đăng từ cùng phường, tìm thêm từ cùng quận
+        if (similarPosts.length < limit && currentPost.location?.district) {
+          console.log(
+            "🔍 Tìm thêm bài đăng cùng quận:",
+            currentPost.location.district
+          );
+
+          // Build the query for district search
+          const districtQuery = {
+            _id: { $ne: postId },
+            "location.district": currentPost.location.district,
+            status: "active",
+            project: null, // Chỉ tìm các bài đăng không thuộc dự án
+            ...(currentPost.location.ward
+              ? { "location.ward": { $ne: currentPost.location.ward } }
+              : {}),
+          };
+
+          // Log the district search query
+          console.log("District search query:", JSON.stringify(districtQuery));
+
+          // Count posts matching this criteria before executing the full query
+          const districtPostsCount = await Post.countDocuments(districtQuery);
+          console.log(
+            `Found ${districtPostsCount} total posts matching district criteria`
+          );
+
+          const districtPosts = await Post.find(districtQuery)
+            .populate("category", "name slug")
+            .populate("author", "name email")
+            .populate("project", "name slug")
+            .sort({ createdAt: -1 })
+            .limit(limit - similarPosts.length);
+
+          console.log(
+            `Retrieved ${districtPosts.length} posts in same district`
+          );
+          similarPosts = [...similarPosts, ...districtPosts];
+
+          if (searchCriteria === "ward" && districtPosts.length > 0) {
+            searchCriteria = "ward_district";
+          } else if (districtPosts.length > 0) {
+            searchCriteria = "district";
+          }
+        }
       }
 
-      // Priority 2: Same ward if not enough posts from project
-      if (similarPosts.length < limit && currentPost.location?.ward) {
-        console.log(
-          "🔍 Finding posts in same ward:",
-          currentPost.location.ward
-        );
-        const wardPosts = await Post.find({
-          _id: { $ne: postId },
-          "location.ward": currentPost.location.ward,
-          status: "approved",
-          ...(currentPost.project
-            ? { project: { $ne: currentPost.project } }
-            : {}),
-        })
-          .populate("category", "name slug")
-          .populate("author", "name email")
-          .populate("project", "name slug")
-          .sort({ createdAt: -1 })
-          .limit(limit - similarPosts.length);
-
-        similarPosts = [...similarPosts, ...wardPosts];
-      }
-
-      // Priority 3: Same district if still not enough posts
-      if (similarPosts.length < limit && currentPost.location?.district) {
-        console.log(
-          "🔍 Finding posts in same district:",
-          currentPost.location.district
-        );
-        const districtPosts = await Post.find({
-          _id: { $ne: postId },
-          "location.district": currentPost.location.district,
-          status: "approved",
-          ...(currentPost.project
-            ? { project: { $ne: currentPost.project } }
-            : {}),
-          ...(currentPost.location.ward
-            ? { "location.ward": { $ne: currentPost.location.ward } }
-            : {}),
-        })
-          .populate("category", "name slug")
-          .populate("author", "name email")
-          .populate("project", "name slug")
-          .sort({ createdAt: -1 })
-          .limit(limit - similarPosts.length);
-
-        similarPosts = [...similarPosts, ...districtPosts];
-      }
-
-      // Priority 4: Same category and type if still not enough
+      // Nếu vẫn không đủ bài đăng, tìm theo category và type
       if (similarPosts.length < limit) {
-        console.log("🔍 Finding posts with same category and type");
-        const categoryPosts = await Post.find({
+        console.log("🔍 Không đủ bài đăng tương tự, tìm theo loại và danh mục");
+
+        // Build the query for category search
+        const categoryQuery = {
           _id: { $ne: postId },
           category: currentPost.category,
           type: currentPost.type,
-          status: "approved",
-        })
+          status: "active",
+          ...(currentPost.project
+            ? { project: { $ne: currentPost.project } }
+            : {}),
+        };
+
+        // Log the category search query
+        console.log("Category search query:", JSON.stringify(categoryQuery));
+
+        // Count posts matching this criteria before executing the full query
+        const categoryPostsCount = await Post.countDocuments(categoryQuery);
+        console.log(
+          `Found ${categoryPostsCount} total posts matching category criteria`
+        );
+
+        const categoryPosts = await Post.find(categoryQuery)
           .populate("category", "name slug")
           .populate("author", "name email")
           .populate("project", "name slug")
           .sort({ createdAt: -1 })
           .limit(limit - similarPosts.length);
 
+        console.log(
+          `Retrieved ${categoryPosts.length} posts with same category and type`
+        );
         similarPosts = [...similarPosts, ...categoryPosts];
+
+        if (searchCriteria === "" && categoryPosts.length > 0) {
+          searchCriteria = "category";
+        }
       }
 
       // Remove duplicates and limit results
@@ -1538,18 +1645,32 @@ export class PostController {
         )
         .slice(0, limit);
 
+      console.log(
+        `Final similar posts count: ${uniquePosts.length} out of total ${similarPosts.length}`
+      );
+
+      // Log the IDs of the similar posts for debugging
+      console.log(
+        "Final similar post IDs:",
+        uniquePosts.map((post) => post._id.toString())
+      );
+
+      // Cập nhật thông tin tiêu chí tìm kiếm dựa trên kết quả thực tế
+      const criteriaResponse = {
+        searchMethod: searchCriteria, // Tiêu chí đã sử dụng để tìm kiếm
+        hasProject: !!currentPost.project,
+        ward: currentPost.location?.ward,
+        district: currentPost.location?.district,
+        category: currentPost.category,
+        type: currentPost.type,
+      };
+
       res.json({
         success: true,
         data: {
           posts: uniquePosts,
           total: uniquePosts.length,
-          criteria: {
-            hasProject: !!currentPost.project,
-            ward: currentPost.location?.ward,
-            district: currentPost.location?.district,
-            category: currentPost.category,
-            type: currentPost.type,
-          },
+          criteria: criteriaResponse,
         },
       });
     } catch (error) {

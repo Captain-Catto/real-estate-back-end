@@ -11,15 +11,18 @@ import {
   AiController,
   AreaController,
   CategoryController,
-  PriceRangeController,
+  PriceController,
   WalletController, // New controller
   AdminController, // Add admin controller
   ProjectController, // Add project controller
   PackageController, // Add package controller
+  SidebarConfigController, // Add sidebar config controller
+  NewsController, // Add news controller
 } from "../controllers";
 import { UploadController } from "../controllers/UploadController";
 import { DeveloperController } from "../controllers/DeveloperController";
 import { NotificationController } from "../controllers/NotificationController";
+import newsRoutes from "./newsRoutes";
 
 const router = Router();
 const indexController = new IndexController();
@@ -31,12 +34,13 @@ const locationController = new LocationController();
 const aiController = new AiController();
 const areaController = new AreaController();
 const categoryController = new CategoryController();
-const priceRangeController = new PriceRangeController();
+const priceController = new PriceController();
 const walletController = new WalletController(); // New controller instance
 const projectController = new ProjectController(); // New project controller instance
 const developerController = new DeveloperController(); // New developer controller instance
 const uploadController = new UploadController(); // New upload controller instance
 const packageController = new PackageController(); // New package controller instance
+const sidebarConfigController = new SidebarConfigController(); // New sidebar config controller instance
 
 export function setRoutes(app: Express) {
   // Trang chủ
@@ -386,8 +390,8 @@ export function setRoutes(app: Express) {
   // Area
   const areaRouter = Router();
   app.use("/api/areas", areaRouter);
-  areaRouter.get("/", areaController.getAreas.bind(areaController));
-  areaRouter.get("/:slug", areaController.getAreaBySlug.bind(areaController));
+  areaRouter.get("/", areaController.getAllAreas.bind(areaController));
+  areaRouter.get("/:id", areaController.getAreaById.bind(areaController));
 
   // Category
   const categoryRouter = Router();
@@ -445,20 +449,123 @@ export function setRoutes(app: Express) {
     categoryController.deleteCategory.bind(categoryController)
   );
 
+  // Admin Area routes
+  const adminAreaRouter = Router();
+  app.use("/api/admin/areas", adminAreaRouter);
+
+  // Get all areas for admin
+  adminAreaRouter.get(
+    "/",
+    authenticateAdmin,
+    areaController.getAreas.bind(areaController)
+  );
+
+  // Create new area
+  adminAreaRouter.post(
+    "/",
+    authenticateAdmin,
+    areaController.createArea.bind(areaController)
+  );
+
+  // Update area order
+  adminAreaRouter.put(
+    "/order",
+    authenticateAdmin,
+    areaController.updateAreaOrder.bind(areaController)
+  );
+
+  // Get area by ID
+  adminAreaRouter.get(
+    "/:id",
+    authenticateAdmin,
+    areaController.getAreaById.bind(areaController)
+  );
+
+  // Update area
+  adminAreaRouter.put(
+    "/:id",
+    authenticateAdmin,
+    areaController.updateArea.bind(areaController)
+  );
+
+  // Toggle area status
+  adminAreaRouter.patch(
+    "/:id/toggle-status",
+    authenticateAdmin,
+    areaController.toggleAreaStatus.bind(areaController)
+  );
+
+  // Delete area
+  adminAreaRouter.delete(
+    "/:id",
+    authenticateAdmin,
+    areaController.deleteArea.bind(areaController)
+  );
+
+  // Admin Price routes
+  const adminPriceRouter = Router();
+  app.use("/api/admin/prices", adminPriceRouter);
+
+  // Get all prices for admin
+  adminPriceRouter.get(
+    "/",
+    authenticateAdmin,
+    priceController.getPrices.bind(priceController)
+  );
+
+  // Create new price
+  adminPriceRouter.post(
+    "/",
+    authenticateAdmin,
+    priceController.createPrice.bind(priceController)
+  );
+
+  // Update price order
+  adminPriceRouter.put(
+    "/order",
+    authenticateAdmin,
+    priceController.updatePriceOrder.bind(priceController)
+  );
+
+  // Get price by ID
+  adminPriceRouter.get(
+    "/:id",
+    authenticateAdmin,
+    priceController.getPriceById.bind(priceController)
+  );
+
+  // Update price
+  adminPriceRouter.put(
+    "/:id",
+    authenticateAdmin,
+    priceController.updatePrice.bind(priceController)
+  );
+
+  // Toggle price status
+  adminPriceRouter.patch(
+    "/:id/toggle-status",
+    authenticateAdmin,
+    priceController.togglePriceStatus.bind(priceController)
+  );
+
+  // Delete price
+  adminPriceRouter.delete(
+    "/:id",
+    authenticateAdmin,
+    priceController.deletePrice.bind(priceController)
+  );
+
   // Price Range
   const priceRangeRouter = Router();
   app.use("/api/price-ranges", priceRangeRouter);
-  priceRangeRouter.get(
-    "/",
-    priceRangeController.getPriceRanges.bind(priceRangeController)
-  );
+  priceRangeRouter.get("/", priceController.getAllPrices.bind(priceController));
   priceRangeRouter.get(
     "/type/:type",
-    priceRangeController.getPriceRangeByType.bind(priceRangeController)
+    priceController.getPricesByType.bind(priceController)
   );
   priceRangeRouter.get(
     "/:slug",
-    priceRangeController.getPriceRangeBySlug.bind(priceRangeController)
+    priceController.getPriceById.bind(priceController)
   );
 
   // Wallet routes - add new routes for wallet
@@ -660,8 +767,6 @@ export function setRoutes(app: Express) {
     NotificationController.deleteNotification
   );
 
-  // Demo routes đã được bỏ - chỉ có thông báo tự động
-
   // Package routes
   const packageRouter = Router();
   app.use("/api/packages", packageRouter);
@@ -701,4 +806,38 @@ export function setRoutes(app: Express) {
     authenticateAdmin,
     packageController.deletePackage.bind(packageController)
   );
+
+  // Sidebar Configuration Routes
+  adminRouter.get(
+    "/sidebar-config",
+    authenticateUser,
+    sidebarConfigController.getSidebarConfig.bind(sidebarConfigController)
+  );
+  adminRouter.put(
+    "/sidebar-config",
+    authenticateUser,
+    sidebarConfigController.updateSidebarConfig.bind(sidebarConfigController)
+  );
+  adminRouter.post(
+    "/sidebar-config/reset",
+    authenticateUser,
+    sidebarConfigController.resetSidebarConfig.bind(sidebarConfigController)
+  );
+  adminRouter.get(
+    "/sidebar-config/default",
+    authenticateUser,
+    sidebarConfigController.getDefaultSidebarConfig.bind(
+      sidebarConfigController
+    )
+  );
+  adminRouter.post(
+    "/sidebar-config/create-default",
+    authenticateAdmin,
+    sidebarConfigController.createDefaultSidebarConfig.bind(
+      sidebarConfigController
+    )
+  );
+
+  // ===== NEWS ROUTES =====
+  app.use("/api/news", newsRoutes);
 }

@@ -5,6 +5,10 @@ export interface IPriceRange extends Document {
   name: string; // Tên hiển thị
   slug: string; // Slug cho URL
   type?: string; // Loại khoảng giá (ban/thue)
+  minValue?: number; // Giá tối thiểu
+  maxValue?: number; // Giá tối đa (-1 = không giới hạn)
+  order?: number; // Thứ tự hiển thị
+  isActive?: boolean; // Trạng thái hoạt động
 }
 
 const PriceRangeSchema = new Schema<IPriceRange>({
@@ -24,8 +28,24 @@ const PriceRangeSchema = new Schema<IPriceRange>({
   },
   type: {
     type: String,
-    enum: ["ban", "thue"],
+    enum: ["ban", "cho-thue", "project"],
     default: "ban",
+  },
+  minValue: {
+    type: Number,
+    default: 0,
+  },
+  maxValue: {
+    type: Number,
+    default: -1, // -1 means unlimited
+  },
+  order: {
+    type: Number,
+    default: 0,
+  },
+  isActive: {
+    type: Boolean,
+    default: true,
   },
 });
 

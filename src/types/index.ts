@@ -1,8 +1,19 @@
+import { Request } from "express";
+
 export interface ApiResponse<T = any> {
   success: boolean;
   message: string;
   data?: T;
   error?: string;
+}
+
+export interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    username: string;
+    email: string;
+    role: "user" | "admin" | "employee";
+  };
 }
 
 export interface AuthTokens {

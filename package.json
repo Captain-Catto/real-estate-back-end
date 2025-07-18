@@ -15,7 +15,8 @@
     "test-update-package": "ts-node scripts/testUpdatePackage.ts",
     "test-notifications": "ts-node scripts/testNotificationSystem.ts",
     "test-notifications-simple": "ts-node scripts/testNotificationSimple.ts",
-    "create-admin": "ts-node scripts/createAdminUser.ts"
+    "create-admin": "ts-node scripts/createAdminUser.ts",
+    "seed:areas-prices": "ts-node scripts/seedAreasAndPrices.ts"
   },
   "dependencies": {
     "@ai-sdk/groq": "^1.2.9",
