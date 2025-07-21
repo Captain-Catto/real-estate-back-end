@@ -5,10 +5,15 @@ export interface INews extends Document {
   slug: string;
   content: string;
   featuredImage?: string;
-  category: "mua-ban" | "cho-thue" | "tai-chinh" | "phong-thuy" | "chung";
+  category: "mua-ban" | "cho-thue" | "tai-chinh" | "phong-thuy" | "tong-hop";
   author: mongoose.Types.ObjectId;
-  status: "draft" | "pending" | "published" | "rejected";
+  moderatedBy?: mongoose.Types.ObjectId;
+  status: "draft" | "pending" | "published" | "unpublished" | "rejected";
   publishedAt?: Date;
+  unpublishedAt?: Date;
+  unpublishReason?: string;
+  rejectedAt?: Date;
+  rejectionReason?: string;
   views: number;
   readTime: number; // in minutes
   isHot: boolean;
@@ -42,7 +47,7 @@ const NewsSchema = new Schema<INews>(
     },
     category: {
       type: String,
-      enum: ["mua-ban", "cho-thue", "tai-chinh", "phong-thuy", "chung"],
+      enum: ["mua-ban", "cho-thue", "tai-chinh", "phong-thuy", "tong-hop"],
       required: true,
       index: true,
     },
@@ -52,15 +57,33 @@ const NewsSchema = new Schema<INews>(
       required: true,
       index: true,
     },
+    moderatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
     status: {
       type: String,
-      enum: ["draft", "pending", "published", "rejected"],
+      enum: ["draft", "pending", "published", "unpublished", "rejected"],
       default: "draft",
       index: true,
     },
     publishedAt: {
       type: Date,
       index: true,
+    },
+    unpublishedAt: {
+      type: Date,
+      index: true,
+    },
+    unpublishReason: {
+      type: String,
+    },
+    rejectedAt: {
+      type: Date,
+      index: true,
+    },
+    rejectionReason: {
+      type: String,
     },
     views: {
       type: Number,
