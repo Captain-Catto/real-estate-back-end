@@ -8,6 +8,7 @@
     "dev": "nodemon src/app.ts",
     "build": "tsc",
     "import-location": "ts-node scripts/importLocation.ts",
+    "import-locations": "ts-node src/scripts/importLocations.ts",
     "seed-categories": "ts-node scripts/seedCategories.ts",
     "seed-packages": "ts-node scripts/seedPackages.ts",
     "check-packages": "ts-node scripts/checkPackages.ts",

@@ -7,7 +7,6 @@ export interface IPost extends Document {
   price: Number;
   location: {
     province: String;
-    district: String;
     ward: String;
     street?: String; // optional
   };
@@ -72,7 +71,6 @@ const postSchema = new Schema<IPost>(
     },
     location: {
       province: { type: String, required: true },
-      district: { type: String, required: true },
       ward: { type: String, required: true },
       street: { type: String, trim: true },
     },
@@ -108,30 +106,38 @@ const postSchema = new Schema<IPost>(
     houseDirection: {
       type: String,
       trim: true,
-      enum: [
-        "Đông",
-        "Tây",
-        "Nam",
-        "Bắc",
-        "Đông Nam",
-        "Tây Nam",
-        "Đông Bắc",
-        "Tây Bắc",
-      ],
+      enum: {
+        values: [
+          "",
+          "Đông",
+          "Tây",
+          "Nam",
+          "Bắc",
+          "Đông Nam",
+          "Tây Nam",
+          "Đông Bắc",
+          "Tây Bắc",
+        ],
+        message: "Hướng nhà không hợp lệ",
+      },
     },
     balconyDirection: {
       type: String,
       trim: true,
-      enum: [
-        "Đông",
-        "Tây",
-        "Nam",
-        "Bắc",
-        "Đông Nam",
-        "Tây Nam",
-        "Đông Bắc",
-        "Tây Bắc",
-      ],
+      enum: {
+        values: [
+          "",
+          "Đông",
+          "Tây",
+          "Nam",
+          "Bắc",
+          "Đông Nam",
+          "Tây Nam",
+          "Đông Bắc",
+          "Tây Bắc",
+        ],
+        message: "Hướng ban công không hợp lệ",
+      },
     },
     roadWidth: {
       type: String,

@@ -45,6 +45,25 @@ export class CategoryController {
     }
   }
 
+  // Lấy thông tin chi tiết danh mục theo ID
+  async getCategoryById(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const category = await Category.findById(id);
+
+      if (!category) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Category not found" });
+      }
+
+      res.json({ success: true, data: category });
+    } catch (error) {
+      console.error("Error fetching category by ID:", error);
+      res.status(500).json({ success: false, message: "Server error" });
+    }
+  }
+
   // Lấy thông tin chi tiết danh mục theo slug
   async getCategoryBySlug(req: Request, res: Response) {
     try {

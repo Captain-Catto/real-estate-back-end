@@ -2,7 +2,7 @@ import { Response } from "express";
 import { Post, Package, Category } from "../models";
 import { AuthenticatedRequest } from "../middleware";
 import mongoose from "mongoose";
-import { LocationModel } from "../models/Location";
+import { ProvinceModel, WardModel } from "../models/Location";
 import { NotificationService } from "../services/NotificationService";
 
 export class PostController {
@@ -58,15 +58,10 @@ export class PostController {
         }
       }
 
-      if (
-        !parsedLocation ||
-        !parsedLocation.province ||
-        !parsedLocation.district ||
-        !parsedLocation.ward
-      ) {
+      if (!parsedLocation || !parsedLocation.province || !parsedLocation.ward) {
         return res.status(400).json({
           success: false,
-          message: "Thiếu thông tin địa chỉ (province, district, ward)",
+          message: "Thiếu thông tin địa chỉ (province, ward)",
         });
       }
 
@@ -273,39 +268,30 @@ export class PostController {
       try {
         // Chỉ convert nếu giá trị là số hợp lệ
         const provinceCode = post.location.province;
-        const districtCode = post.location.district;
         const wardCode = post.location.ward;
 
         if (provinceCode && !isNaN(Number(provinceCode))) {
-          const province = await LocationModel.findOne({
+          const province = await ProvinceModel.findOne({
             code: Number(provinceCode),
           });
 
           if (province) {
-            let districtName = districtCode;
             let wardName = wardCode;
 
-            if (districtCode && !isNaN(Number(districtCode))) {
-              const district = province.districts.find(
-                (d: any) => d.code === Number(districtCode)
-              );
-              if (district) {
-                districtName = district.name || districtCode;
+            // Buscar ward diretamente
+            if (wardCode && !isNaN(Number(wardCode))) {
+              const ward = await WardModel.findOne({
+                code: Number(wardCode),
+                parent_code: provinceCode,
+              });
 
-                if (wardCode && !isNaN(Number(wardCode))) {
-                  const ward = district.wards.find(
-                    (w: any) => w.code === Number(wardCode)
-                  );
-                  if (ward) {
-                    wardName = ward.name || wardCode;
-                  }
-                }
+              if (ward) {
+                wardName = ward.name || wardCode;
               }
             }
 
             locationWithName = {
               province: province.name || provinceCode,
-              district: districtName || districtCode,
               ward: wardName || wardCode,
               street: post.location.street || "",
             };
@@ -440,24 +426,20 @@ export class PostController {
           if (
             loc &&
             loc.province &&
-            loc.district &&
             loc.ward &&
             !isNaN(Number(loc.province)) &&
-            !isNaN(Number(loc.district)) &&
             !isNaN(Number(loc.ward))
           ) {
-            const province = await LocationModel.findOne({
+            const province = await ProvinceModel.findOne({
               code: Number(loc.province),
             });
-            const district = province?.districts.find(
-              (d: any) => d.code === Number(loc.district)
-            );
-            const ward = district?.wards.find(
-              (w: any) => w.code === Number(loc.ward)
-            );
+
+            const ward = await WardModel.findOne({
+              code: Number(loc.ward),
+              parent_code: loc.province,
+            });
             locationWithName = {
               province: province?.name || loc.province,
-              district: district?.name || loc.district,
               ward: ward?.name || loc.ward,
               street: loc.street || "",
             };
@@ -867,7 +849,7 @@ export class PostController {
     // Chuyển đổi từ slug sang code
     try {
       // Tìm trong tất cả các tỉnh/thành với districts và wards
-      const allLocations = await LocationModel.find({});
+      const allLocations = await WardModel.find({});
       console.log(`Found ${allLocations.length} locations to search`);
 
       // Normalize slug để so sánh (chuyển từ hyphen sang underscore)
@@ -876,37 +858,22 @@ export class PostController {
 
       // Tìm trong provinces
       for (const location of allLocations) {
-        // So sánh với codename có sẵn trong database
-        if (location.codename === normalizedSlug) {
+        // So sánh với slug có sẵn trong database
+        if (location.slug === normalizedSlug) {
           console.log(
-            `Found province match by codename: "${location.name}" -> code ${location.code}`
+            `Found province match by slug: "${location.name}" -> code ${location.code}`
           );
           return location.code?.toString() || null;
         }
+      }
 
-        // Tìm trong districts
-        if (location.districts) {
-          for (const district of location.districts) {
-            if (district.codename === normalizedSlug) {
-              console.log(
-                `Found district match by codename: "${district.name}" -> code ${district.code}`
-              );
-              return district.code?.toString() || null;
-            }
-
-            // Tìm trong wards
-            if (district.wards) {
-              for (const ward of district.wards) {
-                if (ward.codename === normalizedSlug) {
-                  console.log(
-                    `Found ward match by codename: "${ward.name}" -> code ${ward.code}`
-                  );
-                  return ward.code?.toString() || null;
-                }
-              }
-            }
-          }
-        }
+      // Tìm trong wards thông qua truy vấn riêng
+      const ward = await WardModel.findOne({ slug: normalizedSlug });
+      if (ward) {
+        console.log(
+          `Found ward match by slug: "${ward.name}" -> code ${ward.code}`
+        );
+        return ward.code?.toString() || null;
       }
 
       console.log(
@@ -919,14 +886,14 @@ export class PostController {
     }
   }
 
-  // Tìm ward trong một district cụ thể
+  // Tìm ward trong một tỉnh/thành phố cụ thể
   async convertWardSlugToCodeInDistrict(
     wardSlug: string,
-    districtCode: string,
+    districtCode: string, // Giữ lại parameter này để không phải thay đổi các lời gọi hàm
     provinceCode: string
   ): Promise<string | null> {
     console.log(
-      `Converting ward slug "${wardSlug}" in district ${districtCode}, province ${provinceCode}`
+      `Converting ward slug "${wardSlug}" in province ${provinceCode}`
     );
 
     if (!isNaN(Number(wardSlug))) {
@@ -938,44 +905,21 @@ export class PostController {
       const normalizedSlug = wardSlug.replace(/-/g, "_");
       console.log(`Normalized ward slug: "${normalizedSlug}"`);
 
-      // Tìm province
-      const province = await LocationModel.findOne({
-        code: Number(provinceCode),
+      // Tìm ward trực tiếp qua parent_code (provinceCode) và slug
+      const ward = await WardModel.findOne({
+        parent_code: provinceCode,
+        slug: normalizedSlug,
       });
 
-      if (!province) {
-        console.log(`Province not found for code: ${provinceCode}`);
-        return null;
-      }
-
-      // Tìm district trong province
-      const district = province.districts?.find(
-        (d: any) => d.code === Number(districtCode)
-      );
-
-      if (!district) {
+      if (!ward) {
         console.log(
-          `District not found for code: ${districtCode} in province ${provinceCode}`
+          `Ward not found with slug: ${normalizedSlug} in province ${provinceCode}`
         );
         return null;
       }
 
-      // Tìm ward trong district
-      const ward = district.wards?.find(
-        (w: any) => w.codename === normalizedSlug
-      );
-
-      if (ward) {
-        console.log(
-          `Found ward match in correct district: "${ward.name}" -> code ${ward.code}`
-        );
-        return ward.code?.toString() || null;
-      }
-
-      console.log(
-        `No ward found with codename "${normalizedSlug}" in district ${districtCode}`
-      );
-      return null;
+      console.log(`Found ward match: "${ward.name}" -> code ${ward.code}`);
+      return ward.code?.toString() || null;
     } catch (error) {
       console.error("Error converting ward slug to code:", error);
       return null;
@@ -1005,7 +949,7 @@ export class PostController {
         type,
         category,
         city,
-        districts,
+        province: city, // Thay thế city bằng province cho rõ ràng
         wards,
         price,
         area,
@@ -1038,7 +982,7 @@ export class PostController {
         cityCode = await this.convertLocationSlugToCode(city.toString());
         if (cityCode) {
           // Tìm cả theo code và tên
-          const cityLocation = await LocationModel.findOne({
+          const cityLocation = await ProvinceModel.findOne({
             code: Number(cityCode),
           });
           const cityName = cityLocation?.name;
@@ -1060,27 +1004,11 @@ export class PostController {
       let districtCodes: string[] = [];
 
       // Xử lý districts có thể là slug hoặc code
+      // Districts đã không còn trong mô hình mới, nhưng giữ lại biến districtCodes
+      // để đảm bảo tương thích với các phần sau của mã
       if (districts) {
-        console.log("Processing districts:", districts);
-        const districtsList = districts.toString().split(",");
-        if (districtsList.length > 0) {
-          const codes = await Promise.all(
-            districtsList.map(async (d) => {
-              const code = await this.convertLocationSlugToCode(d);
-              console.log(`District slug "${d}" -> code "${code}"`);
-              return code;
-            })
-          );
-          districtCodes = codes.filter(Boolean) as string[];
-
-          if (districtCodes.length > 0) {
-            filter["location.district"] = { $in: districtCodes };
-            console.log(
-              "Applied district filter:",
-              filter["location.district"]
-            );
-          }
-        }
+        console.log("Districts đã không còn trong mô hình mới:", districts);
+        districtCodes = [];
       }
 
       // Xử lý wards có thể là slug hoặc code - QUAN TRỌNG: Tìm trong district cụ thể
@@ -1093,24 +1021,22 @@ export class PostController {
           const wardCodes: string[] = [];
 
           for (const w of wardsList) {
-            // Nếu có cả cityCode và districtCodes, tìm ward trong district cụ thể
-            if (cityCode && districtCodes.length > 0) {
-              for (const districtCode of districtCodes) {
-                const code = await this.convertWardSlugToCodeInDistrict(
-                  w,
-                  districtCode,
-                  cityCode
+            // Tìm ward dựa trên provinceCode
+            if (cityCode) {
+              // Giữ lại districtCode để không phải thay đổi signature của hàm
+              const code = await this.convertWardSlugToCodeInDistrict(
+                w,
+                "", // districtCode không còn cần thiết
+                cityCode
+              );
+              if (code) {
+                wardCodes.push(code);
+                console.log(
+                  `Ward slug "${w}" -> code "${code}" in province ${cityCode}`
                 );
-                if (code) {
-                  wardCodes.push(code);
-                  console.log(
-                    `Ward slug "${w}" -> code "${code}" in district ${districtCode}`
-                  );
-                  break; // Tìm thấy rồi thì dừng lại
-                }
               }
             } else {
-              // Fallback về cách cũ nếu không có context
+              // Fallback về cách cũ nếu không có province context
               const code = await this.convertLocationSlugToCode(w);
               if (code) {
                 wardCodes.push(code);
@@ -1223,41 +1149,30 @@ export class PostController {
           const loc = post.location;
           let locationWithName = loc;
 
-          // Convert location codes to names if we have at least province and district
-          if (loc && loc.province && loc.district) {
+          // Convert location codes to names if we have province
+          if (loc && loc.province) {
             // Check if province is a numeric code
             if (!isNaN(Number(loc.province))) {
-              const province = await LocationModel.findOne({
+              const province = await ProvinceModel.findOne({
                 code: Number(loc.province),
               });
 
               if (province) {
-                let districtName = loc.district;
                 let wardName = loc.ward || "";
 
-                // Convert district code to name if it's numeric
-                if (!isNaN(Number(loc.district))) {
-                  const district = province.districts.find(
-                    (d: any) => d.code === Number(loc.district)
-                  );
-                  if (district) {
-                    districtName = district.name || loc.district;
-
-                    // Convert ward code to name if it exists and is numeric
-                    if (loc.ward && !isNaN(Number(loc.ward))) {
-                      const ward = district.wards.find(
-                        (w: any) => w.code === Number(loc.ward)
-                      );
-                      if (ward) {
-                        wardName = ward.name || loc.ward;
-                      }
-                    }
+                // Convert ward code to name if it exists and is numeric
+                if (loc.ward && !isNaN(Number(loc.ward))) {
+                  const ward = await WardModel.findOne({
+                    code: Number(loc.ward),
+                    parent_code: loc.province,
+                  });
+                  if (ward) {
+                    wardName = ward.name || loc.ward;
                   }
                 }
 
                 locationWithName = {
-                  province: province.name || loc.province,
-                  district: districtName,
+                  province: province?.name || loc.province,
                   ward: wardName,
                   street: loc.street || "",
                 };
@@ -1289,8 +1204,7 @@ export class PostController {
           searchCriteria: {
             type,
             category,
-            city,
-            districts,
+            province: city,
             wards,
             price,
             area,
@@ -1548,49 +1462,16 @@ export class PostController {
           searchCriteria = "ward";
         }
 
-        // Nếu không đủ bài đăng từ cùng phường, tìm thêm từ cùng quận
-        if (similarPosts.length < limit && currentPost.location?.district) {
+        // Không cần tìm kiếm theo district nữa vì đã không còn trong mô hình mới
+        // Giữ lại searchCriteria để không ảnh hưởng đến logic sau
+        if (similarPosts.length < limit) {
           console.log(
-            "🔍 Tìm thêm bài đăng cùng quận:",
-            currentPost.location.district
+            "🔍 Bỏ qua tìm kiếm theo quận/huyện do đã thay đổi mô hình location"
           );
 
-          // Build the query for district search
-          const districtQuery = {
-            _id: { $ne: postId },
-            "location.district": currentPost.location.district,
-            status: "active",
-            project: null, // Chỉ tìm các bài đăng không thuộc dự án
-            ...(currentPost.location.ward
-              ? { "location.ward": { $ne: currentPost.location.ward } }
-              : {}),
-          };
-
-          // Log the district search query
-          console.log("District search query:", JSON.stringify(districtQuery));
-
-          // Count posts matching this criteria before executing the full query
-          const districtPostsCount = await Post.countDocuments(districtQuery);
-          console.log(
-            `Found ${districtPostsCount} total posts matching district criteria`
-          );
-
-          const districtPosts = await Post.find(districtQuery)
-            .populate("category", "name slug")
-            .populate("author", "name email")
-            .populate("project", "name slug")
-            .sort({ createdAt: -1 })
-            .limit(limit - similarPosts.length);
-
-          console.log(
-            `Retrieved ${districtPosts.length} posts in same district`
-          );
-          similarPosts = [...similarPosts, ...districtPosts];
-
-          if (searchCriteria === "ward" && districtPosts.length > 0) {
-            searchCriteria = "ward_district";
-          } else if (districtPosts.length > 0) {
-            searchCriteria = "district";
+          // Không còn tìm kiếm theo district nữa
+          if (searchCriteria === "ward") {
+            // Giữ nguyên searchCriteria
           }
         }
       }
@@ -1660,7 +1541,7 @@ export class PostController {
         searchMethod: searchCriteria, // Tiêu chí đã sử dụng để tìm kiếm
         hasProject: !!currentPost.project,
         ward: currentPost.location?.ward,
-        district: currentPost.location?.district,
+        province: currentPost.location?.province,
         category: currentPost.category,
         type: currentPost.type,
       };

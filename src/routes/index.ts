@@ -244,7 +244,7 @@ export function setRoutes(app: Express) {
     locationController.getDistricts.bind(locationController)
   );
   locationRouter.get(
-    "/wards/:provinceCode/:districtCode",
+    "/wards/:provinceCode",
     locationController.getWards.bind(locationController)
   );
 
@@ -272,36 +272,19 @@ export function setRoutes(app: Express) {
     locationController.deleteProvince.bind(locationController)
   );
 
-  // District CRUD
-  locationRouter.post(
-    "/:provinceId/districts",
-    authenticateAdmin,
-    locationController.createDistrict.bind(locationController)
-  );
-  locationRouter.put(
-    "/:provinceId/districts/:districtId",
-    authenticateAdmin,
-    locationController.updateDistrict.bind(locationController)
-  );
-  locationRouter.delete(
-    "/:provinceId/districts/:districtId",
-    authenticateAdmin,
-    locationController.deleteDistrict.bind(locationController)
-  );
-
   // Ward CRUD
   locationRouter.post(
-    "/:provinceId/districts/:districtId/wards",
+    "/:provinceId/wards",
     authenticateAdmin,
     locationController.createWard.bind(locationController)
   );
   locationRouter.put(
-    "/:provinceId/districts/:districtId/wards/:wardId",
+    "/wards/:id",
     authenticateAdmin,
     locationController.updateWard.bind(locationController)
   );
   locationRouter.delete(
-    "/:provinceId/districts/:districtId/wards/:wardId",
+    "/wards/:id",
     authenticateAdmin,
     locationController.deleteWard.bind(locationController)
   );
@@ -404,6 +387,11 @@ export function setRoutes(app: Express) {
   categoryRouter.get(
     "/isProject/:isProject",
     categoryController.getCategoryByIsProject.bind(categoryController)
+  );
+  // lấy danh mục theo ID
+  categoryRouter.get(
+    "/id/:id",
+    categoryController.getCategoryById.bind(categoryController)
   );
   categoryRouter.get(
     "/:slug",

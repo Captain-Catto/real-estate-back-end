@@ -41,7 +41,6 @@ export interface IProjectMap {
 
 export interface IProjectLocation {
   provinceCode: string;
-  districtCode: string;
   wardCode: string;
 }
 
@@ -49,7 +48,6 @@ export interface IProject extends Document {
   name: string;
   slug: string;
   address: string;
-  fullLocation?: string;
   location: IProjectLocation;
   latitude: number;
   longitude: number;
@@ -136,18 +134,8 @@ const ProjectSchema = new Schema<IProject>(
       required: true,
       trim: true,
     },
-    fullLocation: {
-      type: String,
-      required: false,
-      trim: true,
-    },
     location: {
       provinceCode: {
-        type: String,
-        required: true,
-        trim: true,
-      },
-      districtCode: {
         type: String,
         required: true,
         trim: true,
@@ -264,11 +252,9 @@ ProjectSchema.index({ status: 1 });
 ProjectSchema.index({ "developer.name": 1 });
 ProjectSchema.index({ createdAt: -1 });
 ProjectSchema.index({ "location.provinceCode": 1 });
-ProjectSchema.index({ "location.districtCode": 1 });
 ProjectSchema.index({ "location.wardCode": 1 });
 ProjectSchema.index({
   "location.provinceCode": 1,
-  "location.districtCode": 1,
   "location.wardCode": 1,
 });
 

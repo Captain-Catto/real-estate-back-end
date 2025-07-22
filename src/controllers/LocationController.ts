@@ -1,5 +1,5 @@
-import { LocationModel } from "../models/Location";
 import { Request, Response } from "express";
+import { ProvinceModel, WardModel } from "../models/Location";
 
 export class LocationController {
   // ===== PUBLIC METHODS =====
@@ -8,23 +8,43 @@ export class LocationController {
   async getProvinces(req: Request, res: Response) {
     console.log("Fetching provinces...");
     try {
-      const provinces = await LocationModel.find(
+      // Sử dụng dữ liệu từ database thay vì JSON files
+      const provinces = await ProvinceModel.find(
         {},
-        { name: 1, code: 1, codename: 1, division_type: 1, phone_code: 1 }
-      );
-      res.json({ success: true, data: provinces });
+        {
+          code: 1,
+          name: 1,
+          type: 1,
+          slug: 1,
+          name_with_type: 1,
+        }
+      ).sort({ name: 1 });
+
+      // Transform data để trả về với format mong muốn
+      const transformedProvinces = provinces
+        .map((province) => ({
+          name: province.name,
+          code: province.code,
+          slug: province.slug,
+          type: province.type,
+          name_with_type: province.name_with_type,
+        }))
+        .filter((province) => province.name); // Lọc các tỉnh có dữ liệu đầy đủ
+
+      res.json({ success: true, data: transformedProvinces });
     } catch (error) {
+      console.error("Error fetching provinces:", error);
       res.status(500).json({ success: false, message: "Server error" });
     }
   }
 
-  // lấy danh sách tỉnh/thành theo slug (ví dụ: thanh_pho_ha_noi)
+  // lấy danh sách tỉnh/thành theo slug (ví dụ: ha-noi)
   async getProvinceBySlug(req: Request, res: Response) {
     try {
       const { slug } = req.params;
-      const province = await LocationModel.findOne({
-        $or: [{ slug }, { codename: slug }],
-      });
+
+      // Tìm province trong database bằng slug
+      const province = await ProvinceModel.findOne({ slug: slug });
 
       if (!province) {
         return res
@@ -32,30 +52,32 @@ export class LocationController {
           .json({ success: false, message: "Province not found" });
       }
 
-      res.json({ success: true, data: province });
+      res.json({
+        success: true,
+        data: {
+          code: province.code,
+          name: province.name,
+          slug: province.slug,
+          type: province.type,
+          name_with_type: province.name_with_type,
+        },
+      });
     } catch (error) {
       console.error("Error fetching province by slug:", error);
       res.status(500).json({ success: false, message: "Server error" });
     }
   }
 
-  // Lấy danh sách quận/huyện theo mã tỉnh
+  // Lấy danh sách phường/xã theo mã tỉnh
+  // (phương thức này đã đổi tên từ getDistricts nhưng giữ nguyên để không ảnh hưởng đến API)
   async getDistricts(req: Request, res: Response) {
     try {
       const { provinceCode } = req.params;
 
-      // Try to find by code first (if it's numeric)
-      let province;
-      if (!isNaN(Number(provinceCode))) {
-        province = await LocationModel.findOne({ code: Number(provinceCode) });
-      }
-
-      // If not found or not numeric, try to find by slug
-      if (!province) {
-        province = await LocationModel.findOne({
-          $or: [{ slug: provinceCode }, { codename: provinceCode }],
-        });
-      }
+      // Kiểm tra nếu tỉnh tồn tại trong database
+      const province = await ProvinceModel.findOne({
+        $or: [{ code: provinceCode }, { slug: provinceCode }],
+      });
 
       if (!province) {
         return res.status(404).json({
@@ -64,21 +86,29 @@ export class LocationController {
         });
       }
 
-      // Map district data to a simpler format
-      const districts = province.districts.map((district: any) => ({
-        name: district.name,
-        code: district.code,
-        codename: district.codename,
-        division_type: district.division_type,
-        short_codename: district.short_codename,
+      // Lấy danh sách phường/xã từ database theo province code
+      const wards = await WardModel.find({ parent_code: province.code }).sort({
+        name: 1,
+      });
+
+      // Transform data để trả về với format mong muốn
+      const transformedWards = wards.map((ward) => ({
+        code: ward.code,
+        name: ward.name || "",
+        type: ward.type || "",
+        slug: ward.slug || "",
+        name_with_type: ward.name_with_type || "",
+        path: ward.path || "",
+        path_with_type: ward.path_with_type || "",
+        parent_code: ward.parent_code,
       }));
 
       res.json({
         success: true,
-        data: districts,
+        data: transformedWards,
       });
     } catch (error) {
-      console.error("Error getting districts:", error);
+      console.error("Error getting wards:", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -86,62 +116,29 @@ export class LocationController {
     }
   }
 
-  // Lấy danh sách phường/xã theo mã tỉnh và mã quận/huyện
+  // Lấy danh sách phường/xã theo mã tỉnh
   async getWards(req: Request, res: Response) {
     try {
-      const { provinceCode, districtCode } = req.params;
+      const { provinceCode } = req.params;
 
-      // Try to find by code first (if it's numeric)
-      let province;
-      if (!isNaN(Number(provinceCode))) {
-        province = await LocationModel.findOne({ code: Number(provinceCode) });
-      }
+      // Lọc các phường/xã có parent_code là provinceCode từ database
+      const wards = await WardModel.find({ parent_code: provinceCode }).sort({
+        name: 1,
+      });
 
-      // If not found or not numeric, try to find by slug
-      if (!province) {
-        province = await LocationModel.findOne({
-          $or: [{ slug: provinceCode }, { codename: provinceCode }],
-        });
-      }
+      // Transform data để trả về với format mong muốn
+      const transformedWards = wards.map((ward) => ({
+        code: ward.code,
+        name: ward.name || "",
+        type: ward.type || "",
+        slug: ward.slug || "",
+        name_with_type: ward.name_with_type || "",
+        path: ward.path || "",
+        path_with_type: ward.path_with_type || "",
+        parent_code: ward.parent_code,
+      }));
 
-      if (!province) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Province not found" });
-      }
-
-      // Try to find district by code first (if it's numeric)
-      let district;
-      if (!isNaN(Number(districtCode))) {
-        district = province.districts.find(
-          (d: any) => d.code === Number(districtCode)
-        );
-      }
-
-      // If not found or not numeric, try to find by slug/codename
-      if (!district) {
-        district = province.districts.find(
-          (d: any) => d.slug === districtCode || d.codename === districtCode
-        );
-      }
-
-      if (!district) {
-        return res
-          .status(404)
-          .json({ success: false, message: "District not found" });
-      }
-
-      // Map ward data to a simpler format
-      const wards =
-        district.wards?.map((ward: any) => ({
-          name: ward.name,
-          code: ward.code,
-          codename: ward.codename,
-          division_type: ward.division_type,
-          short_codename: ward.short_codename,
-        })) || [];
-
-      res.json({ success: true, data: wards });
+      res.json({ success: true, data: transformedWards });
     } catch (error) {
       console.error("Error getting wards:", error);
       res.status(500).json({ success: false, message: "Server error" });
@@ -151,11 +148,10 @@ export class LocationController {
   // Lấy tên đầy đủ của địa danh dựa trên codes
   async getLocationNames(req: Request, res: Response) {
     try {
-      const { provinceCode, districtCode, wardCode } = req.query;
+      const { provinceCode, wardCode } = req.query;
 
       console.log("📍 getLocationNames called with:", {
         provinceCode,
-        districtCode,
         wardCode,
       });
 
@@ -166,17 +162,13 @@ export class LocationController {
         });
       }
 
-      // Find province
-      let province;
-      if (!isNaN(Number(provinceCode))) {
-        province = await LocationModel.findOne({ code: Number(provinceCode) });
-      }
-
-      if (!province) {
-        province = await LocationModel.findOne({
-          $or: [{ slug: provinceCode }, { codename: provinceCode }],
-        });
-      }
+      // Find province from database
+      const province = await ProvinceModel.findOne({
+        $or: [
+          { code: provinceCode as string },
+          { slug: provinceCode as string },
+        ],
+      });
 
       if (!province) {
         return res.status(404).json({
@@ -188,84 +180,178 @@ export class LocationController {
       const result: any = {
         provinceName: province.name,
         provinceCode: province.code,
+        provinceType: province.type,
       };
 
-      // Find district if provided
-      if (districtCode) {
-        let district;
-        if (!isNaN(Number(districtCode))) {
-          district = province.districts.find(
-            (d: any) => d.code === Number(districtCode)
-          );
+      // Find ward if provided
+      if (wardCode) {
+        const ward = await WardModel.findOne({ code: wardCode as string });
+
+        if (ward) {
+          result.wardName = ward.name || "";
+          result.wardCode = wardCode;
+          result.wardType = ward.type || "";
         }
 
-        if (!district) {
-          district = province.districts.find(
-            (d: any) => d.slug === districtCode || d.codename === districtCode
-          );
-        }
-
-        if (district) {
-          result.districtName = district.name;
-          result.districtCode = district.code;
-
-          // Find ward if provided
-          if (wardCode) {
-            let ward;
-            if (!isNaN(Number(wardCode))) {
-              ward = district.wards?.find(
-                (w: any) => w.code === Number(wardCode)
-              );
-            }
-
-            if (!ward) {
-              ward = district.wards?.find(
-                (w: any) => w.slug === wardCode || w.codename === wardCode
-              );
-            }
-
-            if (ward) {
-              result.wardName = ward.name;
-              result.wardCode = ward.code;
-            }
-          }
-        }
+        return res.json({
+          success: true,
+          data: result,
+        });
       }
 
-      // Build full location name
-      const locationParts = [];
-      if (result.wardName) locationParts.push(result.wardName);
-      if (result.districtName) locationParts.push(result.districtName);
-      if (result.provinceName) locationParts.push(result.provinceName);
-
-      result.fullLocationName = locationParts.join(", ");
-
-      console.log("📍 Location names result:", result);
-
-      res.json({
+      return res.json({
         success: true,
         data: result,
       });
     } catch (error) {
-      console.error("❌ Error getting location names:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
+      console.error("Error getting location names:", error);
+      res.status(500).json({ success: false, message: "Server error" });
+    }
+  }
+
+  // Lấy chuỗi địa chỉ đầy đủ
+  async getFullAddress(req: Request, res: Response) {
+    try {
+      const { provinceCode, wardCode, address } = req.query;
+
+      const locationResult = await this.getLocationNamesInternal(
+        provinceCode as string,
+        wardCode as string
+      );
+
+      if (!locationResult.success) {
+        return res.status(locationResult.status || 500).json({
+          success: false,
+          message: locationResult.message,
+        });
+      }
+
+      const locationData = locationResult.data;
+      const locationParts: string[] = [];
+
+      // Add specific address if provided
+      if (address) {
+        locationParts.push(address as string);
+      }
+
+      if (locationData.wardName) locationParts.push(locationData.wardName);
+      if (locationData.provinceName)
+        locationParts.push(locationData.provinceName);
+
+      res.json({
+        success: true,
+        data: {
+          fullAddress: locationParts.join(", "),
+          ...locationData,
+        },
       });
+    } catch (error) {
+      console.error("Error getting full address:", error);
+      res.status(500).json({ success: false, message: "Server error" });
+    }
+  }
+
+  // Helper method to get location names internally
+  private async getLocationNamesInternal(
+    provinceCode?: string,
+    wardCode?: string
+  ) {
+    try {
+      if (!provinceCode) {
+        return {
+          success: false,
+          status: 400,
+          message: "Province code is required",
+        };
+      }
+
+      // Find province from database
+      const province = await ProvinceModel.findOne({
+        $or: [{ code: provinceCode }, { slug: provinceCode }],
+      });
+
+      if (!province) {
+        return {
+          success: false,
+          status: 404,
+          message: "Province not found",
+        };
+      }
+
+      const result: any = {
+        provinceName: province.name,
+        provinceCode: province.code,
+        provinceType: province.type,
+      };
+
+      // Find ward if provided
+      if (wardCode) {
+        const ward = await WardModel.findOne({ code: wardCode });
+
+        if (ward) {
+          result.wardName = ward.name;
+          result.wardCode = wardCode;
+          result.wardType = ward.type;
+        }
+      }
+
+      return { success: true, data: result };
+    } catch (error) {
+      console.error("Error in getLocationNamesInternal:", error);
+      return {
+        success: false,
+        status: 500,
+        message: "Server error",
+      };
     }
   }
 
   // ===== ADMIN CRUD METHODS =====
 
-  // Lấy tất cả provinces với districts và wards (for admin)
+  // Lấy tất cả provinces (for admin) với wards trực tiếp
   async getProvincesWithChildren(req: Request, res: Response) {
     try {
-      const provinces = await LocationModel.find({}).populate(
-        "districts.wards"
-      );
-      res.json({ success: true, data: provinces });
+      const provinces = await ProvinceModel.find({});
+
+      // Lấy tất cả wards và group theo parent_code (province code)
+      const wards = await WardModel.find({});
+
+      // Transform data để phù hợp với frontend expectations
+      const provincesWithWards = provinces.map((province) => ({
+        _id: province._id,
+        name: province.name,
+        code: province.code,
+        codename: province.slug || "",
+        division_type: province.type || "province",
+        // Thêm các trường từ database
+        type: province.type,
+        name_with_type: province.name_with_type,
+        // Tạo fake districts structure để tương thích với AdminProvince interface
+        districts: [
+          {
+            _id: `${province._id}_default_district`,
+            name: `${province.name} - Wards`,
+            code: Number(province.code) || 0,
+            codename: `${province.slug}_wards` || "",
+            division_type: "district",
+            short_codename: "",
+            wards: wards
+              .filter((ward) => ward.parent_code === province.code)
+              .map((ward) => ({
+                _id: ward._id,
+                name: ward.name,
+                code: Number(ward.code) || 0,
+                codename: ward.slug || "",
+                division_type: ward.type || "ward",
+                short_codename: ward.slug || "",
+              })),
+          },
+        ],
+      }));
+
+      res.json({ success: true, data: provincesWithWards });
     } catch (error) {
-      console.error("Error fetching provinces with children:", error);
+      console.error("Error fetching provinces:", error);
       res.status(500).json({ success: false, message: "Server error" });
     }
   }
@@ -273,50 +359,38 @@ export class LocationController {
   // Thêm province mới
   async createProvince(req: Request, res: Response) {
     try {
-      const { name, code, codename, division_type, phone_code } = req.body;
+      const { name, code, slug, type, name_with_type } = req.body;
 
-      if (!name || !codename) {
+      if (!name) {
         return res.status(400).json({
           success: false,
-          message: "Name and codename are required",
+          message: "Name is required",
         });
       }
 
       // Check if province already exists
-      const existingProvince = await LocationModel.findOne({
-        $or: [{ name }, { codename }, ...(code ? [{ code }] : [])],
+      const existingProvince = await ProvinceModel.findOne({
+        $or: [{ name }, { code }],
       });
 
       if (existingProvince) {
         return res.status(400).json({
           success: false,
-          message: "Province with this name, code, or codename already exists",
+          message: "Province with this name or code already exists",
         });
       }
 
-      // Generate code if not provided
-      let finalCode = code;
-      if (!finalCode) {
-        const lastProvince = await LocationModel.findOne(
-          {},
-          {},
-          { sort: { code: -1 } }
-        );
-        finalCode =
-          lastProvince && lastProvince.code ? lastProvince.code + 1 : 1;
-      }
-
-      const newProvince = new LocationModel({
+      const province = new ProvinceModel({
         name,
-        code: finalCode,
-        codename,
-        division_type: division_type || "province",
-        phone_code,
-        districts: [],
+        code,
+        slug,
+        type,
+        name_with_type,
       });
 
-      await newProvince.save();
-      res.json({ success: true, data: newProvince });
+      await province.save();
+
+      res.json({ success: true, data: province });
     } catch (error) {
       console.error("Error creating province:", error);
       res.status(500).json({ success: false, message: "Server error" });
@@ -327,37 +401,20 @@ export class LocationController {
   async updateProvince(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { name, code, codename, division_type, phone_code } = req.body;
+      const { name, code, slug, type, name_with_type } = req.body;
 
-      if (!name || !codename) {
+      if (!name) {
         return res.status(400).json({
           success: false,
-          message: "Name and codename are required",
+          message: "Name is required",
         });
       }
 
-      // Check if another province has the same code, name, or codename
-      const existingProvince = await LocationModel.findOne({
-        _id: { $ne: id },
-        $or: [{ name }, { codename }, ...(code ? [{ code }] : [])],
-      });
-
-      if (existingProvince) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Another province with this name, code, or codename already exists",
-        });
-      }
-
-      const updateData: any = { name, codename };
-      if (code !== undefined) updateData.code = code;
-      if (division_type) updateData.division_type = division_type;
-      if (phone_code !== undefined) updateData.phone_code = phone_code;
-
-      const province = await LocationModel.findByIdAndUpdate(id, updateData, {
-        new: true,
-      });
+      const province = await ProvinceModel.findByIdAndUpdate(
+        id,
+        { name, code, slug, type, name_with_type },
+        { new: true }
+      );
 
       if (!province) {
         return res.status(404).json({
@@ -378,7 +435,7 @@ export class LocationController {
     try {
       const { id } = req.params;
 
-      const province = await LocationModel.findByIdAndDelete(id);
+      const province = await ProvinceModel.findByIdAndDelete(id);
 
       if (!province) {
         return res.status(404).json({
@@ -394,146 +451,30 @@ export class LocationController {
     }
   }
 
-  // Thêm district
-  async createDistrict(req: Request, res: Response) {
-    try {
-      const { provinceId } = req.params;
-      const { name, code, codename, division_type, short_codename } = req.body;
-
-      if (!name || !codename) {
-        return res.status(400).json({
-          success: false,
-          message: "Name and codename are required",
-        });
-      }
-
-      const province = await LocationModel.findById(provinceId);
-      if (!province) {
-        return res.status(404).json({
-          success: false,
-          message: "Province not found",
-        });
-      }
-
-      // Generate code if not provided
-      let finalCode = code;
-      if (!finalCode) {
-        const lastDistrict =
-          province.districts.length > 0
-            ? province.districts[province.districts.length - 1]
-            : null;
-        finalCode =
-          lastDistrict && lastDistrict.code ? lastDistrict.code + 1 : 1;
-      }
-
-      const newDistrict = {
-        name,
-        code: finalCode,
-        codename,
-        division_type: division_type || "district",
-        short_codename: short_codename || codename,
-        wards: [],
-      };
-
-      province.districts.push(newDistrict);
-      await province.save();
-
-      res.json({ success: true, data: newDistrict });
-    } catch (error) {
-      console.error("Error creating district:", error);
-      res.status(500).json({ success: false, message: "Server error" });
-    }
-  }
-
-  // Cập nhật district
-  async updateDistrict(req: Request, res: Response) {
-    try {
-      const { provinceId, districtId } = req.params;
-      const { name, code, codename, division_type, short_codename } = req.body;
-
-      if (!name || !codename) {
-        return res.status(400).json({
-          success: false,
-          message: "Name and codename are required",
-        });
-      }
-
-      const province = await LocationModel.findById(provinceId);
-      if (!province) {
-        return res.status(404).json({
-          success: false,
-          message: "Province not found",
-        });
-      }
-
-      const district = province.districts.id(districtId);
-      if (!district) {
-        return res.status(404).json({
-          success: false,
-          message: "District not found",
-        });
-      }
-
-      district.name = name;
-      district.codename = codename;
-      if (code !== undefined) district.code = code;
-      if (division_type) district.division_type = division_type;
-      if (short_codename) district.short_codename = short_codename;
-
-      await province.save();
-
-      res.json({ success: true, data: district });
-    } catch (error) {
-      console.error("Error updating district:", error);
-      res.status(500).json({ success: false, message: "Server error" });
-    }
-  }
-
-  // Xóa district
-  async deleteDistrict(req: Request, res: Response) {
-    try {
-      const { provinceId, districtId } = req.params;
-
-      const province = await LocationModel.findById(provinceId);
-      if (!province) {
-        return res.status(404).json({
-          success: false,
-          message: "Province not found",
-        });
-      }
-
-      const district = province.districts.id(districtId);
-      if (!district) {
-        return res.status(404).json({
-          success: false,
-          message: "District not found",
-        });
-      }
-
-      province.districts.pull(districtId);
-      await province.save();
-
-      res.json({ success: true, message: "District deleted successfully" });
-    } catch (error) {
-      console.error("Error deleting district:", error);
-      res.status(500).json({ success: false, message: "Server error" });
-    }
-  }
-
   // Thêm ward
   async createWard(req: Request, res: Response) {
     try {
-      const { provinceId, districtId } = req.params;
-      const { name, code, codename, division_type, short_codename } = req.body;
+      const { provinceId } = req.params;
+      const {
+        name,
+        code,
+        slug,
+        type,
+        name_with_type,
+        path,
+        path_with_type,
+        parent_code,
+      } = req.body;
 
-      if (!name || !codename) {
+      if (!name) {
         return res.status(400).json({
           success: false,
-          message: "Name and codename are required",
+          message: "Name is required",
         });
       }
 
-      const province = await LocationModel.findById(provinceId);
+      // Get province to determine parent_code
+      const province = await ProvinceModel.findById(provinceId);
       if (!province) {
         return res.status(404).json({
           success: false,
@@ -541,34 +482,28 @@ export class LocationController {
         });
       }
 
-      const district = province.districts.id(districtId);
-      if (!district) {
-        return res.status(404).json({
+      // Check if ward already exists
+      const existingWard = await WardModel.findOne({ code });
+      if (existingWard) {
+        return res.status(400).json({
           success: false,
-          message: "District not found",
+          message: "Ward with this code already exists",
         });
       }
 
-      // Generate code if not provided
-      let finalCode = code;
-      if (!finalCode) {
-        const lastWard =
-          district.wards.length > 0
-            ? district.wards[district.wards.length - 1]
-            : null;
-        finalCode = lastWard && lastWard.code ? lastWard.code + 1 : 1;
-      }
-
-      const newWard = {
+      // Create new ward
+      const newWard = new WardModel({
         name,
-        code: finalCode,
-        codename,
-        division_type: division_type || "ward",
-        short_codename: short_codename || codename,
-      };
+        code,
+        slug,
+        type,
+        name_with_type,
+        path,
+        path_with_type,
+        parent_code: province.code, // Use province code as parent_code
+      });
 
-      district.wards.push(newWard);
-      await province.save();
+      await newWard.save();
 
       res.json({ success: true, data: newWard });
     } catch (error) {
@@ -580,47 +515,46 @@ export class LocationController {
   // Cập nhật ward
   async updateWard(req: Request, res: Response) {
     try {
-      const { provinceId, districtId, wardId } = req.params;
-      const { name, code, codename, division_type, short_codename } = req.body;
+      const { id } = req.params;
+      const {
+        name,
+        code,
+        slug,
+        type,
+        name_with_type,
+        path,
+        path_with_type,
+        parent_code,
+      } = req.body;
 
-      if (!name || !codename) {
+      if (!name) {
         return res.status(400).json({
           success: false,
-          message: "Name and codename are required",
+          message: "Name is required",
         });
       }
 
-      const province = await LocationModel.findById(provinceId);
-      if (!province) {
-        return res.status(404).json({
-          success: false,
-          message: "Province not found",
-        });
-      }
+      const ward = await WardModel.findByIdAndUpdate(
+        id,
+        {
+          name,
+          code,
+          slug,
+          type,
+          name_with_type,
+          path,
+          path_with_type,
+          parent_code,
+        },
+        { new: true }
+      );
 
-      const district = province.districts.id(districtId);
-      if (!district) {
-        return res.status(404).json({
-          success: false,
-          message: "District not found",
-        });
-      }
-
-      const ward = district.wards.id(wardId);
       if (!ward) {
         return res.status(404).json({
           success: false,
           message: "Ward not found",
         });
       }
-
-      ward.name = name;
-      ward.codename = codename;
-      if (code !== undefined) ward.code = code;
-      if (division_type) ward.division_type = division_type;
-      ward.short_codename = short_codename || codename;
-
-      await province.save();
 
       res.json({ success: true, data: ward });
     } catch (error) {
@@ -632,34 +566,16 @@ export class LocationController {
   // Xóa ward
   async deleteWard(req: Request, res: Response) {
     try {
-      const { provinceId, districtId, wardId } = req.params;
+      const { id } = req.params;
 
-      const province = await LocationModel.findById(provinceId);
-      if (!province) {
-        return res.status(404).json({
-          success: false,
-          message: "Province not found",
-        });
-      }
+      const ward = await WardModel.findByIdAndDelete(id);
 
-      const district = province.districts.id(districtId);
-      if (!district) {
-        return res.status(404).json({
-          success: false,
-          message: "District not found",
-        });
-      }
-
-      const ward = district.wards.id(wardId);
       if (!ward) {
         return res.status(404).json({
           success: false,
           message: "Ward not found",
         });
       }
-
-      district.wards.pull(wardId);
-      await province.save();
 
       res.json({ success: true, message: "Ward deleted successfully" });
     } catch (error) {

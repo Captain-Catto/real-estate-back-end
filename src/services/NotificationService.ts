@@ -1,6 +1,6 @@
 import { Notification } from "../models";
 import { Post } from "../models";
-import { LocationModel } from "../models/Location";
+import { ProvinceModel, WardModel } from "../models/Location";
 import mongoose from "mongoose";
 
 export interface CreateNotificationData {
@@ -47,60 +47,50 @@ async function generatePostUrl(postId: string): Promise<string> {
     console.log(`📍 Location data:`, post.location);
 
     // Kiểm tra xem có đủ thông tin location không
-    if (
-      post.location?.province &&
-      post.location?.district &&
-      post.location?.ward
-    ) {
+    if (post.location?.province && post.location?.ward) {
       // Xác định transaction type từ post.type
       const transactionType = post.type === "ban" ? "mua-ban" : "cho-thue";
 
       // Convert location names to slugs
       let provinceSlug = "";
-      let districtSlug = "";
       let wardSlug = "";
 
       // Nếu location được lưu dưới dạng code, cần convert sang tên
       if (!isNaN(Number(post.location.province))) {
         console.log(`🔢 Converting location codes to slugs`);
         // Location được lưu dưới dạng code, cần convert
-        const province = await LocationModel.findOne({
+        const province = await ProvinceModel.findOne({
           code: Number(post.location.province),
         });
+
         if (province) {
-          provinceSlug =
-            province.codename || createLocationSlug(String(province.name));
+          provinceSlug = createLocationSlug(String(province.name));
 
-          const district = province.districts.find(
-            (d: any) => d.code === Number(post.location.district)
-          );
-          if (district) {
-            districtSlug =
-              district.codename || createLocationSlug(String(district.name));
+          // Tìm ward trong model Ward
+          const ward = await WardModel.findOne({
+            code: Number(post.location.ward),
+            parent_code: post.location.province,
+          });
 
-            const ward = district.wards.find(
-              (w: any) => w.code === Number(post.location.ward)
-            );
-            if (ward) {
-              wardSlug = ward.codename || createLocationSlug(String(ward.name));
-            }
+          if (ward) {
+            wardSlug = createLocationSlug(String(ward.name));
           }
         }
       } else {
         console.log(`📝 Using location names directly`);
         // Location đã được lưu dưới dạng tên, convert sang slug
         provinceSlug = createLocationSlug(String(post.location.province));
-        districtSlug = createLocationSlug(String(post.location.district));
         wardSlug = createLocationSlug(String(post.location.ward));
       }
 
-      if (provinceSlug && districtSlug && wardSlug) {
-        const seoUrl = `/${transactionType}/${provinceSlug}/${districtSlug}/${wardSlug}/${idSlug}`;
+      if (provinceSlug && wardSlug) {
+        // Sử dụng URL không có district
+        const seoUrl = `/${transactionType}/${provinceSlug}/${wardSlug}/${idSlug}`;
         console.log(`✅ Generated SEO URL: ${seoUrl}`);
         return seoUrl;
       } else {
         console.log(
-          `⚠️ Missing location slugs: province=${provinceSlug}, district=${districtSlug}, ward=${wardSlug}`
+          `⚠️ Missing location slugs: province=${provinceSlug}, ward=${wardSlug}`
         );
       }
     }

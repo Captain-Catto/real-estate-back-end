@@ -2,28 +2,22 @@ import mongoose from "mongoose";
 
 const WardSchema = new mongoose.Schema({
   name: String,
-  code: Number,
-  codename: String,
-  division_type: String,
-  short_codename: String,
-});
-
-const DistrictSchema = new mongoose.Schema({
-  name: String,
-  code: Number,
-  codename: String,
-  division_type: String,
-  short_codename: String,
-  wards: [WardSchema],
+  type: String,
+  slug: String,
+  name_with_type: String,
+  path: String,
+  path_with_type: String,
+  code: String,
+  parent_code: String, // Liên kết với province code
 });
 
 const ProvinceSchema = new mongoose.Schema({
   name: String,
-  code: Number,
-  codename: String,
-  division_type: String,
-  phone_code: Number,
-  districts: [DistrictSchema],
+  slug: String,
+  type: String,
+  name_with_type: String,
+  code: String,
 });
 
-export const LocationModel = mongoose.model("Location", ProvinceSchema);
+export const ProvinceModel = mongoose.model("Province", ProvinceSchema);
+export const WardModel = mongoose.model("Ward", WardSchema);
