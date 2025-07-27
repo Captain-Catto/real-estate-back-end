@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { News, INews } from "../models/News";
+import { NewsCategory } from "../models/NewsCategory";
 import mongoose from "mongoose";
 import { NewsService } from "../services/NewsService";
 import { TokenPayload } from "../utils/auth";
@@ -99,31 +100,30 @@ export class NewsController {
    */
   async getNewsCategories(req: RequestWithUser, res: Response) {
     try {
-      const categories = await News.aggregate([
-        { $match: { status: "published" } },
-        { $group: { _id: "$category", count: { $sum: 1 } } },
-        { $sort: { _id: 1 } },
-      ]);
+      // Get all active categories
+      const categories = await NewsCategory.find({ isActive: true }).sort({
+        order: 1,
+      });
 
-      // Map enum values to human-readable names
-      const categoryLabels: { [key: string]: string } = {
-        "mua-ban": "Mua bán",
-        "cho-thue": "Cho thuê",
-        "tai-chinh": "Tài chính",
-        "phong-thuy": "Phong thủy",
-        chung: "Chung",
-      };
-
-      const formattedCategories = categories.map((cat) => ({
-        id: cat._id,
-        name: categoryLabels[cat._id] || cat._id,
-        slug: cat._id,
-        count: cat.count,
-      }));
+      // Get counts for each category
+      const categoriesWithCount = await Promise.all(
+        categories.map(async (category: any) => {
+          const count = await News.countDocuments({
+            category: category.slug,
+            status: "published",
+          });
+          return {
+            id: category.slug,
+            name: category.name,
+            slug: category.slug,
+            count,
+          };
+        })
+      );
 
       return res.status(200).json({
         success: true,
-        data: formattedCategories,
+        data: categoriesWithCount,
       });
     } catch (error) {
       console.error("Error in getNewsCategories:", error);

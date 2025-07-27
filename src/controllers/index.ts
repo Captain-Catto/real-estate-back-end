@@ -14,7 +14,8 @@ export class IndexController {
           logout: "POST /api/auth/logout",
           logoutAll: "POST /api/auth/logout-all",
           profile: "GET /api/auth/profile",
-          updateProfile: "PUT /api/auth/profile",
+          updateProfile:
+            "PUT /api/auth/profile (username, phoneNumber, avatar only - email cannot be changed)",
           changePassword: "PUT /api/auth/change-password",
           deleteAccount: "DELETE /api/auth/account",
         },
@@ -67,3 +68,4 @@ export { NotificationController } from "./NotificationController";
 export { PackageController } from "./PackageController";
 export { SidebarConfigController } from "./SidebarConfigController";
 export { NewsController } from "./NewsController";
+export { HeaderSettingsController } from "./HeaderSettingsController";

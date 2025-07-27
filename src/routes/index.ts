@@ -1,6 +1,7 @@
 import { Router, Express } from "express";
 import { authenticateUser, authenticateAdmin } from "../middleware";
 import { uploadS3 } from "../utils/s3Upload";
+import paymentSchedulerRoutes from "./paymentSchedulerRoutes";
 import {
   IndexController,
   AuthController,
@@ -18,11 +19,12 @@ import {
   PackageController, // Add package controller
   SidebarConfigController, // Add sidebar config controller
   NewsController, // Add news controller
+  HeaderSettingsController, // Add header settings controller
 } from "../controllers";
 import { UploadController } from "../controllers/UploadController";
 import { DeveloperController } from "../controllers/DeveloperController";
 import { NotificationController } from "../controllers/NotificationController";
-import newsRoutes from "./newsRoutes";
+import { NewsCategoryController } from "../controllers/NewsCategoryController";
 
 const router = Router();
 const indexController = new IndexController();
@@ -142,6 +144,12 @@ export function setRoutes(app: Express) {
     postController.extendPost.bind(postController)
   );
 
+  // Increment post views
+  postRouter.post(
+    "/:postId/view",
+    postController.incrementViews.bind(postController)
+  );
+
   // Favorite
   const favoriteRouter = Router();
   app.use("/api/favorites", favoriteRouter);
@@ -246,6 +254,17 @@ export function setRoutes(app: Express) {
   locationRouter.get(
     "/wards/:provinceCode",
     locationController.getWards.bind(locationController)
+  );
+
+  // Các route mới để lấy thông tin địa điểm từ slug
+  locationRouter.get(
+    "/location-by-slug/:provinceSlug/:wardSlug?",
+    locationController.getLocationBySlug.bind(locationController)
+  );
+
+  locationRouter.get(
+    "/breadcrumb-from-slug",
+    locationController.getBreadcrumbFromSlug.bind(locationController)
   );
 
   // Admin location management routes
@@ -624,6 +643,11 @@ export function setRoutes(app: Express) {
     AdminController.getAdminPostById
   );
   adminRouter.put(
+    "/posts/:id",
+    authenticateUser,
+    AdminController.updateAdminPost
+  );
+  adminRouter.put(
     "/posts/:id/approve",
     authenticateUser,
     AdminController.approvePost
@@ -679,6 +703,11 @@ export function setRoutes(app: Express) {
     "/payments",
     authenticateUser,
     AdminController.getAllPayments
+  );
+  adminRouter.post(
+    "/payments/cancel-expired",
+    authenticateUser,
+    AdminController.cancelExpiredPayments
   );
 
   // Admin notification management đã được bỏ
@@ -826,6 +855,151 @@ export function setRoutes(app: Express) {
     )
   );
 
+  // Header Settings Routes
+  adminRouter.get(
+    "/header-settings",
+    authenticateAdmin,
+    HeaderSettingsController.getHeaderMenus
+  );
+  adminRouter.post(
+    "/header-settings",
+    authenticateAdmin,
+    HeaderSettingsController.createHeaderMenu
+  );
+  // Specific routes must come before parameterized routes
+  adminRouter.put(
+    "/header-settings/reorder",
+    authenticateAdmin,
+    HeaderSettingsController.updateMenuOrder
+  );
+  adminRouter.post(
+    "/header-settings/reset",
+    authenticateAdmin,
+    HeaderSettingsController.resetToDefault
+  );
+  // Parameterized routes come after specific routes
+  adminRouter.put(
+    "/header-settings/:id",
+    authenticateAdmin,
+    HeaderSettingsController.updateHeaderMenu
+  );
+  adminRouter.delete(
+    "/header-settings/:id",
+    authenticateAdmin,
+    HeaderSettingsController.deleteHeaderMenu
+  );
+  adminRouter.patch(
+    "/header-settings/:id/toggle",
+    authenticateAdmin,
+    HeaderSettingsController.toggleMenuStatus
+  );
+
   // ===== NEWS ROUTES =====
-  app.use("/api/news", newsRoutes);
+  const newsRouter = Router();
+  app.use("/api/news", newsRouter);
+
+  const newsController = new NewsController();
+  const newsCategoryController = new NewsCategoryController();
+
+  // ===== PUBLIC NEWS ROUTES =====
+
+  // Get published news with pagination and filters
+  // GET /api/news?page=1&limit=12&category=mua-ban&search=keyword&featured=true&hot=true
+  newsRouter.get("/", newsController.getPublishedNews);
+
+  // Get news categories with counts
+  // GET /api/news/categories
+  newsRouter.get("/categories", newsController.getNewsCategories);
+
+  // Get featured news for homepage
+  // GET /api/news/featured?limit=6
+  newsRouter.get("/featured", newsController.getFeaturedNews);
+
+  // Get hot news
+  // GET /api/news/hot?limit=10
+  newsRouter.get("/hot", newsController.getHotNews);
+
+  // Get single news by slug
+  // GET /api/news/slug/:slug
+  newsRouter.get("/slug/:slug", newsController.getNewsBySlug);
+
+  // ===== ADMIN NEWS ROUTES =====
+
+  // Get all news for admin (with filters)
+  // GET /api/news/admin?page=1&limit=20&status=all&category=all&author=userId&search=keyword
+  newsRouter.get("/admin", authenticateUser, newsController.getAdminNews);
+
+  // Create new news
+  // POST /api/news/admin
+  newsRouter.post("/admin", authenticateUser, newsController.createNews);
+
+  // Get news statistics (admin only)
+  // GET /api/news/admin/stats
+  newsRouter.get(
+    "/admin/stats",
+    authenticateAdmin,
+    newsController.getNewsStats
+  );
+
+  // ===== NEWS CATEGORY ADMIN ROUTES =====
+
+  // GET /api/news/admin/categories
+  newsRouter.get(
+    "/admin/categories",
+    authenticateAdmin,
+    newsCategoryController.getAdminNewsCategories
+  );
+
+  // POST /api/news/admin/categories
+  newsRouter.post(
+    "/admin/categories",
+    authenticateAdmin,
+    newsCategoryController.createNewsCategory
+  );
+
+  // PUT /api/news/admin/categories/order
+  newsRouter.put(
+    "/admin/categories/order",
+    authenticateAdmin,
+    newsCategoryController.updateNewsCategoriesOrder
+  );
+
+  // PUT /api/news/admin/categories/:id
+  newsRouter.put(
+    "/admin/categories/:id",
+    authenticateAdmin,
+    newsCategoryController.updateNewsCategory
+  );
+
+  // DELETE /api/news/admin/categories/:id
+  newsRouter.delete(
+    "/admin/categories/:id",
+    authenticateAdmin,
+    newsCategoryController.deleteNewsCategory
+  );
+
+  // ===== DYNAMIC NEWS ROUTES (ĐẶT CUỐI CÙNG) =====
+
+  // Get single news for editing
+  // GET /api/news/admin/:id
+  newsRouter.get("/admin/:id", authenticateUser, newsController.getNewsById);
+
+  // Update news
+  // PUT /api/news/admin/:id
+  newsRouter.put("/admin/:id", authenticateUser, newsController.updateNews);
+
+  // Delete news
+  // DELETE /api/news/admin/:id
+  newsRouter.delete("/admin/:id", authenticateUser, newsController.deleteNews);
+
+  // Update news status (admin only)
+  // PUT /api/news/admin/:id/status
+  newsRouter.put(
+    "/admin/:id/status",
+    authenticateAdmin,
+    newsController.updateNewsStatus
+  );
+
+  // Payment Scheduler Routes (Admin only)
+  app.use("/api/admin/payment-scheduler", paymentSchedulerRoutes);
 }

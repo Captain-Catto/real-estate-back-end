@@ -6,6 +6,7 @@ import cors from "cors";
 import path from "path";
 import { setRoutes } from "./routes/index";
 import { requestLogger } from "./middleware/index";
+import { paymentScheduler } from "./services/paymentScheduler";
 
 dotenv.config();
 
@@ -14,12 +15,13 @@ const PORT = process.env.PORT || 8080;
 
 // MongoDB connection
 mongoose
-  .connect(
-    process.env.MONGODB_URI || "mongodb://localhost:27017/my-backend-app"
-  )
+  .connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/real-estate")
   .then(() => {
     console.log("Connected to MongoDB");
-    // Post expiry checking is now done at query time, no scheduler needed
+
+    // Bắt đầu payment scheduler để tự động hủy giao dịch pending quá hạn
+    paymentScheduler.start();
+    console.log("Payment scheduler started");
   })
   .catch((error) => console.error("MongoDB connection error:", error));
 
@@ -43,6 +45,25 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 // Initialize routes
 setRoutes(app);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
+});
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received, shutting down gracefully...");
+  paymentScheduler.stop();
+  server.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
+});
+
+process.on("SIGINT", () => {
+  console.log("SIGINT received, shutting down gracefully...");
+  paymentScheduler.stop();
+  server.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
 });

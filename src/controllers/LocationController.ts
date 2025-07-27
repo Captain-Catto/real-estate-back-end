@@ -74,9 +74,14 @@ export class LocationController {
     try {
       const { provinceCode } = req.params;
 
-      // Kiểm tra nếu tỉnh tồn tại trong database
+      // Kiểm tra nếu tỉnh tồn tại trong database - search by code, slug, or name
       const province = await ProvinceModel.findOne({
-        $or: [{ code: provinceCode }, { slug: provinceCode }],
+        $or: [
+          { code: provinceCode },
+          { slug: provinceCode },
+          { name: provinceCode }, // Add name search
+          { name_with_type: provinceCode }, // Also check full name
+        ],
       });
 
       if (!province) {
@@ -162,11 +167,13 @@ export class LocationController {
         });
       }
 
-      // Find province from database
+      // Find province from database - search by code, slug, or name
       const province = await ProvinceModel.findOne({
         $or: [
           { code: provinceCode as string },
           { slug: provinceCode as string },
+          { name: provinceCode as string }, // Add name search
+          { name_with_type: provinceCode as string }, // Also check full name
         ],
       });
 
@@ -205,6 +212,61 @@ export class LocationController {
       });
     } catch (error) {
       console.error("Error getting location names:", error);
+      res.status(500).json({ success: false, message: "Server error" });
+    }
+  }
+
+  // Lấy thông tin địa điểm theo slug
+  async getLocationBySlug(req: Request, res: Response) {
+    try {
+      const { provinceSlug, wardSlug } = req.params;
+
+      console.log("📍 getLocationBySlug called with:", {
+        provinceSlug,
+        wardSlug,
+      });
+
+      // Tìm province theo slug
+      const province = await ProvinceModel.findOne({ slug: provinceSlug });
+
+      if (!province) {
+        return res.status(404).json({
+          success: false,
+          message: "Province not found with slug: " + provinceSlug,
+        });
+      }
+
+      const result: any = {
+        provinceName: province.name,
+        provinceCode: province.code,
+        provinceType: province.type,
+        provinceSlug: province.slug,
+      };
+
+      // Tìm ward theo slug nếu có
+      if (wardSlug) {
+        const wards = await WardModel.find({ parent_code: province.code });
+        const ward = wards.find((w) => w.slug === wardSlug);
+
+        if (ward) {
+          result.wardName = ward.name;
+          result.wardCode = ward.code;
+          result.wardType = ward.type;
+          result.wardSlug = ward.slug;
+        } else {
+          return res.status(404).json({
+            success: false,
+            message: "Ward not found with slug: " + wardSlug,
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      console.error("Error getting location by slug:", error);
       res.status(500).json({ success: false, message: "Server error" });
     }
   }
@@ -251,6 +313,85 @@ export class LocationController {
     }
   }
 
+  // Lấy thông tin breadcrumb đầy đủ từ slug
+  async getBreadcrumbFromSlug(req: Request, res: Response) {
+    try {
+      const { provinceSlug, wardSlug } = req.query;
+
+      if (!provinceSlug) {
+        return res.status(400).json({
+          success: false,
+          message: "Province slug is required",
+        });
+      }
+
+      console.log("📍 getBreadcrumbFromSlug called with:", {
+        provinceSlug,
+        wardSlug,
+      });
+
+      // Tìm province theo slug
+      const province = await ProvinceModel.findOne({
+        slug: provinceSlug as string,
+      });
+
+      if (!province) {
+        return res.status(404).json({
+          success: false,
+          message: "Province not found with slug: " + provinceSlug,
+        });
+      }
+
+      const result: any = {
+        province: {
+          name: province.name,
+          code: province.code,
+          type: province.type,
+          slug: province.slug,
+          name_with_type: province.name_with_type,
+        },
+        breadcrumb: [
+          {
+            name: province.name,
+            slug: province.slug,
+            type: "province",
+          },
+        ],
+      };
+
+      // Tìm ward theo slug nếu có
+      if (wardSlug) {
+        const wards = await WardModel.find({ parent_code: province.code });
+        const ward = wards.find((w) => w.slug === wardSlug);
+
+        if (ward) {
+          result.ward = {
+            name: ward.name,
+            code: ward.code,
+            type: ward.type,
+            slug: ward.slug,
+            name_with_type: ward.name_with_type,
+          };
+
+          // Thêm ward vào breadcrumb
+          result.breadcrumb.push({
+            name: ward.name,
+            slug: ward.slug,
+            type: "ward",
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      console.error("Error getting breadcrumb from slug:", error);
+      res.status(500).json({ success: false, message: "Server error" });
+    }
+  }
+
   // Helper method to get location names internally
   private async getLocationNamesInternal(
     provinceCode?: string,
@@ -265,9 +406,19 @@ export class LocationController {
         };
       }
 
-      // Find province from database
+      console.log("📍 getLocationNamesInternal called with:", {
+        provinceCode,
+        wardCode,
+      });
+
+      // Find province from database - search by code, slug, or name
       const province = await ProvinceModel.findOne({
-        $or: [{ code: provinceCode }, { slug: provinceCode }],
+        $or: [
+          { code: provinceCode },
+          { slug: provinceCode },
+          { name: provinceCode }, // Add name search
+          { name_with_type: provinceCode }, // Also check full name
+        ],
       });
 
       if (!province) {
@@ -294,6 +445,8 @@ export class LocationController {
           result.wardType = ward.type;
         }
       }
+
+      console.log("📍 getLocationNamesInternal result:", result);
 
       return { success: true, data: result };
     } catch (error) {

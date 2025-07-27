@@ -53,8 +53,8 @@ export interface ChangePasswordRequest {
 
 export interface UpdateProfileRequest {
   username?: string;
-  email?: string;
   phoneNumber?: string;
+  avatar?: string;
 }
 
 export interface DeleteAccountRequest {

@@ -17,6 +17,8 @@ export interface IPayment extends Document {
   paymentDate?: Date;
   completedAt?: Date;
   failedAt?: Date;
+  cancelledAt?: Date;
+  cancelReason?: string;
   metadata?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
@@ -88,6 +90,12 @@ const paymentSchema = new Schema<IPayment>(
     },
     failedAt: {
       type: Date,
+    },
+    cancelledAt: {
+      type: Date,
+    },
+    cancelReason: {
+      type: String,
     },
     metadata: {
       type: Schema.Types.Mixed,

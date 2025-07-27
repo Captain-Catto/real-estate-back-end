@@ -477,7 +477,7 @@ export class AuthController {
     console.log("Request headers:", req.headers);
     try {
       const userId = req.user?.userId;
-      const { username, email, phoneNumber } = req.body;
+      const { username, email, phoneNumber, avatar } = req.body;
 
       console.log("Update profile request:", req.body);
       console.log("Authenticated user ID:", userId);
@@ -489,12 +489,20 @@ export class AuthController {
         });
       }
 
-      // Validate input
-      if (!username && !email) {
+      // Check if someone is trying to update email
+      if (email) {
+        return res.status(400).json({
+          success: false,
+          message: "Email cannot be changed for security reasons",
+        });
+      }
+
+      // Validate input - allow avatar-only updates
+      if (!username && !phoneNumber && !avatar) {
         return res.status(400).json({
           success: false,
           message:
-            "At least one field (username or email) is required to update",
+            "At least one field (username, phoneNumber, or avatar) is required to update",
         });
       }
 
@@ -533,30 +541,6 @@ export class AuthController {
         updateFields.username = username.trim();
       }
 
-      if (email && email !== user.email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid email format",
-          });
-        }
-
-        const existingEmail = await User.findOne({
-          email: email.toLowerCase(),
-          _id: { $ne: userId },
-        });
-
-        if (existingEmail) {
-          return res.status(400).json({
-            success: false,
-            message: "Email already exists",
-          });
-        }
-
-        updateFields.email = email.toLowerCase().trim();
-      }
-
       if (phoneNumber && phoneNumber !== user.phoneNumber) {
         // Chuyển đổi phoneNumber thành string trước khi xử lý
         const phoneStr = String(phoneNumber).trim();
@@ -593,6 +577,21 @@ export class AuthController {
 
         updateFields.phoneNumber = phoneStr;
       }
+
+      // Handle avatar update
+      if (avatar && avatar !== user.avatar) {
+        // Basic URL validation for avatar
+        try {
+          new URL(avatar);
+          updateFields.avatar = avatar.trim();
+        } catch (error) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid avatar URL format",
+          });
+        }
+      }
+
       // Update user
       const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
         new: true,

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Post, IPost } from "../models/Post";
 import { User, IUser } from "../models/User";
 import { Payment, IPayment } from "../models/Payment";
+import { Category } from "../models/Category";
 import UserLog from "../models/UserLog";
 import mongoose from "mongoose";
 import { AuthenticatedRequest } from "../middleware";
@@ -904,11 +905,13 @@ export const AdminController = {
         status,
         type,
         category,
-        priority,
+        package: packageFilter,
         search,
         dateFrom,
         dateTo,
         author,
+        project,
+        searchMode,
       } = req.query;
 
       // Build filter object
@@ -916,8 +919,44 @@ export const AdminController = {
 
       if (status && status !== "all") filter.status = status;
       if (type && type !== "all") filter.type = type;
-      if (category && category !== "all") filter.category = category;
-      if (priority && priority !== "all") filter.priority = priority;
+
+      // Handle category filter
+      if (category && category !== "all") {
+        console.log(`🔍 Admin filtering by category: "${category}"`);
+
+        // Since category field in posts is now stored as ObjectId, we need to use ObjectId for filtering
+        if (mongoose.Types.ObjectId.isValid(category as string)) {
+          // If frontend sends ObjectId, use it as ObjectId for comparison
+          filter.category = new mongoose.Types.ObjectId(category as string);
+          console.log(`✅ Using ObjectId: ${category}`);
+        } else {
+          // If frontend sends category id (like "cat_apartment"), find the ObjectId
+          const categoryDoc = await Category.findOne({ id: category });
+          if (categoryDoc) {
+            filter.category = categoryDoc._id;
+            console.log(
+              `✅ Found category by id: ${category} -> ${categoryDoc._id}`
+            );
+          } else {
+            // If not found by id, try finding by name as fallback
+            const categoryDocByName = await Category.findOne({
+              name: category,
+            });
+            if (categoryDocByName) {
+              filter.category = categoryDocByName._id;
+              console.log(
+                `✅ Found category by name: ${category} -> ${categoryDocByName._id}`
+              );
+            } else {
+              console.log(`❌ Category "${category}" not found in database`);
+              // Don't return error, just skip this filter to show all posts
+            }
+          }
+        }
+      }
+
+      if (packageFilter && packageFilter !== "all")
+        filter.package = packageFilter;
       if (author && mongoose.Types.ObjectId.isValid(author as string)) {
         filter.author = author;
       }
@@ -941,13 +980,36 @@ export const AdminController = {
         }
       }
 
+      // Handle project filter
+      if (project && project !== "all") {
+        console.log(`🔍 Admin filtering by project: "${project}"`);
+        if (mongoose.Types.ObjectId.isValid(project as string)) {
+          filter.project = new mongoose.Types.ObjectId(project as string);
+          console.log(`✅ Using project ObjectId: ${project}`);
+        } else {
+          console.log(`❌ Invalid project ID: ${project}`);
+        }
+      }
+
+      // Handle search mode (this affects how category filtering works)
+      // searchMode can be "property" or "project"
+      // This is mainly handled on frontend for UI logic, but we log it for debugging
+      if (searchMode) {
+        console.log(`🔍 Admin search mode: "${searchMode}"`);
+      }
+
+      console.log(`📋 Admin posts filter:`, JSON.stringify(filter, null, 2));
+
       const posts = await Post.find(filter)
         .populate("author", "username email avatar")
+        .populate("category", "name slug id isProject")
+        .populate("project", "name address category")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
 
       const totalPosts = await Post.countDocuments(filter);
+      console.log(`📊 Found ${totalPosts} posts matching filter`);
 
       res.json({
         success: true,
@@ -979,6 +1041,7 @@ export const AdminController = {
       const pending = await Post.countDocuments({ status: "pending" });
       const rejected = await Post.countDocuments({ status: "rejected" });
       const expired = await Post.countDocuments({ status: "expired" });
+      const deleted = await Post.countDocuments({ status: "deleted" });
 
       // Get counts for each package/priority
       const vip = await Post.countDocuments({
@@ -1000,6 +1063,7 @@ export const AdminController = {
         pending,
         rejected,
         expired,
+        deleted, // Add deleted count to stats
         vip,
         premium,
         normal,
@@ -1210,6 +1274,241 @@ export const AdminController = {
     }
   },
 
+  // PUT /api/admin/posts/:id - Update post by admin (admin can edit all fields, employee can only change status)
+  updateAdminPost: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const currentUserId = req.user?.userId;
+      const userRole = req.user?.role;
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "ID tin đăng không hợp lệ",
+        });
+      }
+
+      // Check if user has permission (admin or employee)
+      if (userRole !== "admin" && userRole !== "employee") {
+        return res.status(403).json({
+          success: false,
+          message: "Không có quyền truy cập",
+        });
+      }
+
+      const post = await Post.findById(id);
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy tin đăng",
+        });
+      }
+
+      const updates = req.body;
+      console.log("🔄 ADMIN POST UPDATE REQUEST");
+      console.log("👤 User ID:", currentUserId);
+      console.log("🎭 User Role:", userRole);
+      console.log("📄 Post ID:", id);
+      console.log("📦 Request body:", JSON.stringify(updates, null, 2));
+
+      // If employee, only allow status changes
+      if (userRole === "employee") {
+        const allowedFields = ["status"];
+        const requestedFields = Object.keys(updates);
+        const invalidFields = requestedFields.filter(
+          (field) => !allowedFields.includes(field)
+        );
+
+        if (invalidFields.length > 0) {
+          return res.status(403).json({
+            success: false,
+            message: `Employee chỉ có thể thay đổi trạng thái tin đăng. Các trường không được phép: ${invalidFields.join(
+              ", "
+            )}`,
+          });
+        }
+
+        // Handle status change
+        if (updates.status) {
+          const oldStatus = post.status;
+          post.status = updates.status;
+
+          // Add admin/employee info for status changes
+          if (updates.status === "active") {
+            post.approvedAt = new Date();
+            post.approvedBy = new mongoose.Types.ObjectId(currentUserId);
+            post.rejectedAt = undefined;
+            post.rejectedBy = undefined;
+            post.rejectedReason = undefined;
+          } else if (updates.status === "rejected") {
+            post.rejectedAt = new Date();
+            post.rejectedBy = new mongoose.Types.ObjectId(currentUserId);
+            post.rejectedReason = updates.reason || "Không đạt yêu cầu";
+            post.approvedAt = undefined;
+            post.approvedBy = undefined;
+          } else if (updates.status === "pending") {
+            // When restoring from deleted or changing to pending, clear approval/rejection info
+            post.approvedAt = undefined;
+            post.approvedBy = undefined;
+            post.rejectedAt = undefined;
+            post.rejectedBy = undefined;
+            post.rejectedReason = undefined;
+            console.log(
+              `📋 Post ${id} status changed to pending by employee - cleared approval/rejection data`
+            );
+          }
+
+          await post.save();
+
+          // Send notifications for status changes
+          try {
+            if (updates.status === "active" && oldStatus !== "active") {
+              await NotificationService.createPostApprovedNotification(
+                post.author.toString(),
+                post.title.toString(),
+                post._id.toString()
+              );
+            } else if (
+              updates.status === "rejected" &&
+              oldStatus !== "rejected"
+            ) {
+              await NotificationService.createPostRejectedNotification(
+                post.author.toString(),
+                post.title.toString(),
+                post._id.toString(),
+                post.rejectedReason?.toString()
+              );
+            } else if (
+              updates.status === "pending" &&
+              oldStatus === "deleted"
+            ) {
+              // Notification for restore from deleted to pending by employee
+              console.log(
+                `📨 Post ${id} restored from deleted to pending by employee - notification could be sent here`
+              );
+            }
+          } catch (error) {
+            console.error("❌ Error sending notification:", error);
+            // Don't fail the request for notification error
+          }
+
+          console.log(
+            `✅ Post ${id} status updated from "${oldStatus}" to "${updates.status}" by employee ${currentUserId}`
+          );
+        }
+      } else if (userRole === "admin") {
+        // Admin can edit all fields
+        const allowedUpdateKeys = Object.keys(updates).filter(
+          (key) =>
+            key !== "author" &&
+            key !== "createdAt" &&
+            key !== "_id" &&
+            key !== "id"
+        );
+
+        console.log("🔑 Allowed update keys for admin:", allowedUpdateKeys);
+
+        allowedUpdateKeys.forEach((key) => {
+          console.log(
+            `📝 Updating ${key}: ${(post as any)[key]} → ${updates[key]}`
+          );
+          (post as any)[key] = updates[key];
+        });
+
+        // Handle status changes with admin privileges
+        if (updates.status) {
+          const oldStatus = post.status;
+
+          if (updates.status === "active") {
+            post.approvedAt = new Date();
+            post.approvedBy = new mongoose.Types.ObjectId(currentUserId);
+            post.rejectedAt = undefined;
+            post.rejectedBy = undefined;
+            post.rejectedReason = undefined;
+          } else if (updates.status === "rejected") {
+            post.rejectedAt = new Date();
+            post.rejectedBy = new mongoose.Types.ObjectId(currentUserId);
+            post.rejectedReason = updates.reason || "Không đạt yêu cầu";
+            post.approvedAt = undefined;
+            post.approvedBy = undefined;
+          } else if (updates.status === "pending") {
+            // When restoring from deleted or changing to pending, clear approval/rejection info
+            post.approvedAt = undefined;
+            post.approvedBy = undefined;
+            post.rejectedAt = undefined;
+            post.rejectedBy = undefined;
+            post.rejectedReason = undefined;
+            console.log(
+              `📋 Post ${id} status changed to pending - cleared approval/rejection data`
+            );
+          }
+
+          // Send notifications for status changes
+          try {
+            if (updates.status === "active" && oldStatus !== "active") {
+              await NotificationService.createPostApprovedNotification(
+                post.author.toString(),
+                post.title.toString(),
+                post._id.toString()
+              );
+            } else if (
+              updates.status === "rejected" &&
+              oldStatus !== "rejected"
+            ) {
+              await NotificationService.createPostRejectedNotification(
+                post.author.toString(),
+                post.title.toString(),
+                post._id.toString(),
+                post.rejectedReason?.toString()
+              );
+            } else if (
+              updates.status === "pending" &&
+              oldStatus === "deleted"
+            ) {
+              // Notification for restore from deleted to pending by admin
+              console.log(
+                `📨 Post ${id} restored from deleted to pending by admin - notification could be sent here`
+              );
+            }
+          } catch (error) {
+            console.error("❌ Error sending notification:", error);
+            // Don't fail the request for notification error
+          }
+
+          console.log(
+            `✅ Post ${id} status updated from "${oldStatus}" to "${updates.status}" by admin ${currentUserId}`
+          );
+        }
+
+        await post.save();
+        console.log(
+          `✅ Post ${id} updated successfully by admin ${currentUserId}`
+        );
+      }
+
+      // Re-fetch the updated post to return complete data
+      const updatedPost = await Post.findById(id).populate(
+        "author",
+        "username email avatar phoneNumber"
+      );
+
+      res.json({
+        success: true,
+        message:
+          userRole === "admin"
+            ? "Tin đăng đã được cập nhật thành công"
+            : "Trạng thái tin đăng đã được cập nhật",
+        data: { post: updatedPost },
+      });
+    } catch (error) {
+      console.error("Error updating admin post:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi cập nhật tin đăng",
+      });
+    }
+  },
+
   // GET /api/admin/payments - Get all payments with filters and pagination
   getAllPayments: async (req: Request, res: Response) => {
     try {
@@ -1356,6 +1655,72 @@ export const AdminController = {
       res.status(500).json({
         success: false,
         message: "Lỗi server khi lấy danh sách giao dịch",
+      });
+    }
+  },
+
+  // POST /api/admin/payments/cancel-expired
+  cancelExpiredPayments: async (req: Request, res: Response) => {
+    try {
+      // Tính thời gian 1 ngày trước
+      const oneDayAgo = new Date();
+      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+
+      console.log("Checking for expired payments before:", oneDayAgo);
+
+      // Tìm các giao dịch pending quá 1 ngày
+      const expiredPayments = await Payment.find({
+        status: "pending",
+        createdAt: { $lt: oneDayAgo },
+      });
+
+      console.log(`Found ${expiredPayments.length} expired payments`);
+
+      if (expiredPayments.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: "Không có giao dịch nào cần hủy",
+          cancelledCount: 0,
+        });
+      }
+
+      // Cập nhật trạng thái thành cancelled
+      const updateResult = await Payment.updateMany(
+        {
+          status: "pending",
+          createdAt: { $lt: oneDayAgo },
+        },
+        {
+          $set: {
+            status: "cancelled",
+            updatedAt: new Date(),
+            cancelledAt: new Date(),
+            cancelReason: "Tự động hủy sau 24 giờ",
+          },
+        }
+      );
+
+      console.log(
+        `Updated ${updateResult.modifiedCount} payments to cancelled`
+      );
+
+      res.status(200).json({
+        success: true,
+        message: `Đã hủy ${updateResult.modifiedCount} giao dịch quá hạn`,
+        cancelledCount: updateResult.modifiedCount,
+        expiredPayments: expiredPayments.map((p) => ({
+          orderId: p.orderId,
+          amount: p.amount,
+          description: p.description,
+          createdAt: p.createdAt,
+        })),
+      });
+    } catch (error) {
+      console.error("Error cancelling expired payments:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi hủy giao dịch quá hạn",
+        error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   },

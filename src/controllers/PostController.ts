@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { Post, Package, Category } from "../models";
+import { Post, Package, Category, Wallet, Payment } from "../models";
 import { AuthenticatedRequest } from "../middleware";
 import mongoose from "mongoose";
 import { ProvinceModel, WardModel } from "../models/Location";
@@ -31,9 +31,6 @@ export class PostController {
         balconyDirection,
         roadWidth,
         frontWidth,
-        contactName,
-        email,
-        phone,
         packageId,
         packageDuration,
         project,
@@ -97,16 +94,25 @@ export class PostController {
         }
       }
 
-      // Convert category name to ObjectId
+      // Convert category to ObjectId
       let categoryId;
       if (mongoose.Types.ObjectId.isValid(category)) {
         // If already an ObjectId, use it directly
-        categoryId = category;
+        categoryId = new mongoose.Types.ObjectId(category);
         console.log(`✅ Category is already ObjectId: ${categoryId}`);
       } else {
-        // If category name, find the category by name
-        console.log(`🔍 Looking for category with name: "${category}"`);
-        const categoryDoc = await Category.findOne({ name: category });
+        // Try to find category by id field first (like "cat_apartment")
+        console.log(`🔍 Looking for category with id: "${category}"`);
+        let categoryDoc = await Category.findOne({ id: category });
+
+        if (!categoryDoc) {
+          // If not found by id, try finding by name as fallback
+          console.log(
+            `🔍 Category not found by id, trying by name: "${category}"`
+          );
+          categoryDoc = await Category.findOne({ name: category });
+        }
+
         console.log(`📝 Category found:`, categoryDoc);
         if (!categoryDoc) {
           console.log(`❌ Category "${category}" not found in database`);
@@ -116,7 +122,7 @@ export class PostController {
           });
         }
         categoryId = categoryDoc._id;
-        console.log(`✅ Category ID found: ${categoryId}`);
+        console.log(`✅ Category ObjectId found: ${categoryId}`);
       }
 
       const post = new Post({
@@ -142,9 +148,6 @@ export class PostController {
         balconyDirection,
         roadWidth,
         frontWidth,
-        contactName,
-        email,
-        phone,
         packageId,
         packageDuration: originalPackageDuration,
         expiredAt,
@@ -177,15 +180,60 @@ export class PostController {
       const limit = parseInt(req.query.limit as string) || 10;
       const skip = (page - 1) * limit;
 
-      const { category, status, search, author } = req.query;
+      const {
+        category,
+        status,
+        search,
+        author,
+        type,
+        package: packageFilter,
+        project,
+      } = req.query;
 
       // Build filter object
       const filter: any = {};
 
-      if (category) filter.category = category;
+      // Handle category filter - convert to ObjectId if needed
+      if (category) {
+        if (mongoose.Types.ObjectId.isValid(category as string)) {
+          // If already an ObjectId, use it directly
+          filter.category = category;
+        } else {
+          // If category ID (like "cat_apartment"), find the category by id field
+          const categoryDoc = await Category.findOne({ id: category });
+          if (categoryDoc) {
+            filter.category = categoryDoc._id;
+          } else {
+            // If not found by id, try finding by name as fallback
+            const categoryDocByName = await Category.findOne({
+              name: category,
+            });
+            if (categoryDocByName) {
+              filter.category = categoryDocByName._id;
+            } else {
+              console.log(`❌ Category "${category}" not found in database`);
+              // Don't return error, just skip this filter to show all posts
+            }
+          }
+        }
+      }
+
       if (status) filter.status = status;
+      if (type && type !== "all") filter.type = type;
       if (author && mongoose.Types.ObjectId.isValid(author as string)) {
         filter.author = author;
+      }
+
+      // Handle package filter - including "free" package
+      if (packageFilter && packageFilter !== "all") {
+        filter.package = packageFilter;
+      }
+
+      // Handle project filter
+      if (project && project !== "all") {
+        if (mongoose.Types.ObjectId.isValid(project as string)) {
+          filter["location.project"] = project;
+        }
       }
 
       // Add text search if provided
@@ -212,6 +260,7 @@ export class PostController {
       const posts = await Post.find(filter)
         .populate("author", "username email avatar")
         .populate("category", "name slug")
+        .populate("location.project", "name address")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
@@ -540,7 +589,13 @@ export class PostController {
       const userId = req.user?.userId;
       const { postId } = req.params;
 
+      console.log("🔄 POST UPDATE REQUEST");
+      console.log("👤 User ID:", userId);
+      console.log("📄 Post ID:", postId);
+      console.log("📦 Request body:", JSON.stringify(req.body, null, 2));
+
       if (!userId || !postId || !mongoose.Types.ObjectId.isValid(postId)) {
+        console.log("❌ Invalid request - missing userId or postId");
         return res.status(400).json({
           success: false,
           message: "Invalid request",
@@ -566,8 +621,31 @@ export class PostController {
       // Lưu trạng thái cũ để log
       const oldStatus = post.status;
 
+      console.log("📖 Current post data BEFORE update:");
+      console.log("🏠 houseDirection:", post.houseDirection);
+      console.log("🌅 balconyDirection:", post.balconyDirection);
+      console.log("🛣️ roadWidth:", post.roadWidth);
+      console.log("🏠 frontWidth:", post.frontWidth);
+      console.log("🛏️ bedrooms:", post.bedrooms);
+      console.log("🚿 bathrooms:", post.bathrooms);
+      console.log("🏢 floors:", post.floors);
+      console.log("📄 legalDocs:", post.legalDocs);
+      console.log("🪑 furniture:", post.furniture);
+      console.log("📊 status:", post.status);
+
       // Cập nhật các trường cần thiết
       const updates = req.body;
+
+      console.log("📝 Incoming updates:");
+      console.log("🏠 houseDirection:", updates.houseDirection);
+      console.log("🌅 balconyDirection:", updates.balconyDirection);
+      console.log("🛣️ roadWidth:", updates.roadWidth);
+      console.log("🏠 frontWidth:", updates.frontWidth);
+      console.log("🛏️ bedrooms:", updates.bedrooms);
+      console.log("🚿 bathrooms:", updates.bathrooms);
+      console.log("🏢 floors:", updates.floors);
+      console.log("📄 legalDocs:", updates.legalDocs);
+      console.log("🪑 furniture:", updates.furniture);
 
       // Handle package field specifically
       if (updates.package) {
@@ -588,7 +666,12 @@ export class PostController {
           key !== "package" &&
           key !== "images" // Exclude images as we handle it separately
       );
+      console.log("🔑 Allowed update keys:", allowedUpdateKeys);
+
       allowedUpdateKeys.forEach((key) => {
+        console.log(
+          `📝 Updating ${key}: ${(post as any)[key]} → ${updates[key]}`
+        );
         // Use type assertion to avoid TS error
         (post as any)[key] = updates[key];
       });
@@ -620,6 +703,18 @@ export class PostController {
       }
 
       await post.save();
+
+      console.log("📖 POST DATA AFTER UPDATE:");
+      console.log("🏠 houseDirection:", post.houseDirection);
+      console.log("🌅 balconyDirection:", post.balconyDirection);
+      console.log("🛣️ roadWidth:", post.roadWidth);
+      console.log("🏠 frontWidth:", post.frontWidth);
+      console.log("🛏️ bedrooms:", post.bedrooms);
+      console.log("🚿 bathrooms:", post.bathrooms);
+      console.log("🏢 floors:", post.floors);
+      console.log("📄 legalDocs:", post.legalDocs);
+      console.log("🪑 furniture:", post.furniture);
+      console.log("📊 status:", post.status);
 
       console.log(`✅ Post ${postId} updated successfully by user ${userId}`);
 
@@ -1314,6 +1409,48 @@ export class PostController {
         });
       }
 
+      // Kiểm tra số dư ví của user
+      const userWallet = await Wallet.findOne({ userId });
+      if (!userWallet) {
+        return res.status(404).json({
+          success: false,
+          message: "User wallet not found",
+        });
+      }
+
+      if (userWallet.balance < packageInfo.price) {
+        return res.status(400).json({
+          success: false,
+          message: "Insufficient wallet balance",
+        });
+      }
+
+      // Trừ tiền từ ví
+      userWallet.balance -= packageInfo.price;
+      await userWallet.save();
+
+      // Tạo payment record
+      const orderId = `EXTEND_${postId}_${Date.now()}`;
+      const payment = new Payment({
+        userId,
+        postId: post._id,
+        orderId,
+        amount: packageInfo.price,
+        currency: "VND",
+        paymentMethod: "wallet",
+        status: "completed",
+        description: `Gia hạn tin đăng: ${post.title}`,
+        completedAt: new Date(),
+        metadata: {
+          postId: post._id,
+          packageId: packageInfo._id,
+          packageName: packageInfo.name,
+          duration: packageInfo.duration,
+          type: "post_extend",
+        },
+      });
+      await payment.save();
+
       // Tính toán expiry date mới
       const now = new Date();
       const currentExpiry = post.expiredAt ? new Date(post.expiredAt) : now;
@@ -1329,9 +1466,9 @@ export class PostController {
       post.packageId = packageId;
       post.originalPackageDuration = packageInfo.duration;
 
-      // Nếu post đã expired, set lại status thành active
+      // Nếu post đã expired, set status thành pending để chờ duyệt lại
       if (post.status === "expired") {
-        post.status = "active";
+        post.status = "pending";
       }
 
       await post.save();
@@ -1559,6 +1696,44 @@ export class PostController {
       res.status(500).json({
         success: false,
         message: "Lỗi server khi lấy tin đăng tương tự",
+      });
+    }
+  }
+
+  // Increment post views
+  async incrementViews(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { postId } = req.params;
+
+      if (!mongoose.Types.ObjectId.isValid(postId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid post ID format",
+        });
+      }
+
+      const post = await Post.findByIdAndUpdate(
+        postId,
+        { $inc: { views: 1 } },
+        { new: true }
+      );
+
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Post not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: { views: post.views },
+      });
+    } catch (error) {
+      console.error("Increment views error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
       });
     }
   }

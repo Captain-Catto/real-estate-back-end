@@ -373,14 +373,28 @@ export class ProjectController {
     try {
       console.log("🔍 Getting projects for selection with query:", req.query);
 
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const skip = (page - 1) * limit;
+
       // Build filter object
-      const filter: any = {
-        $or: [
+      const filter: any = {};
+
+      // Filter by status - only apply if status is not 'all'
+      if (req.query.status && req.query.status !== "all") {
+        filter.status = req.query.status;
+        console.log("🏷️ Filtering by status:", req.query.status);
+      } else if (!req.query.status) {
+        // Default behavior - only show active projects if no status specified
+        filter.$or = [
           { status: "active" },
           { status: "Đang bán" },
           { status: "Sắp mở bán" },
-        ],
-      };
+        ];
+        console.log("🏷️ Using default status filter (active projects only)");
+      } else {
+        console.log("🏷️ Getting ALL projects regardless of status");
+      }
 
       // Filter by location codes if provided
       if (req.query.provinceCode) {
@@ -394,16 +408,93 @@ export class ProjectController {
         console.log("🏠 Filtering by ward:", req.query.wardCode);
       }
 
-      console.log("🔍 Final filter:", filter);
+      // Filter by category if provided
+      if (req.query.categoryId) {
+        filter.category = req.query.categoryId;
+        console.log("🏷️ Filtering by category:", req.query.categoryId);
+      }
 
-      // Get projects with essential fields
+      // Search by name or address if provided
+      if (req.query.search) {
+        const searchTerm = req.query.search as string;
+        const searchFilter = {
+          $or: [
+            { name: { $regex: searchTerm, $options: "i" } },
+            { address: { $regex: searchTerm, $options: "i" } },
+          ],
+        };
+
+        // If we already have filters, combine them with $and
+        if (Object.keys(filter).length > 0) {
+          filter.$and = [
+            // Preserve existing filters
+            { ...filter },
+            // Add search filter
+            searchFilter,
+          ];
+
+          // Clean up the original filter properties that are now in $and
+          Object.keys(filter).forEach((key) => {
+            if (key !== "$and") {
+              delete filter[key];
+            }
+          });
+        } else {
+          // If no existing filters, just add the search filter
+          Object.assign(filter, searchFilter);
+        }
+
+        console.log("🔍 Searching for:", searchTerm);
+      }
+
+      console.log("🔍 Final filter:", JSON.stringify(filter, null, 2));
+
+      // Count total projects matching filter
+      const totalProjects = await Project.countDocuments(filter);
+
+      // Get projects with essential fields and pagination
       const projects = await Project.find(filter)
-        .select("_id name address location developer.name status")
-        .sort({ name: 1 });
+        .select("_id name address location developer.name status category")
+        .populate("category", "_id name isProject")
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(limit);
 
-      console.log(`✅ Found ${projects.length} projects matching criteria`);
+      console.log(
+        `✅ Found ${projects.length} projects (page ${page}/${Math.ceil(
+          totalProjects / limit
+        )})`
+      );
 
-      res.json(projects); // Trả về array trực tiếp để match với frontend expect
+      // Transform projects to include fullLocation
+      const transformedProjects = projects.map((project) => ({
+        _id: project._id,
+        name: project.name,
+        address: project.address,
+        fullLocation: project.address || "Địa chỉ chưa cập nhật",
+        location: project.location,
+        category: project.category,
+      }));
+
+      // Return with pagination info if requested, otherwise return array for backward compatibility
+      if (req.query.includePagination === "true") {
+        res.json({
+          success: true,
+          data: {
+            projects: transformedProjects,
+            pagination: {
+              currentPage: page,
+              totalPages: Math.ceil(totalProjects / limit),
+              totalItems: totalProjects,
+              itemsPerPage: limit,
+              hasMore: page < Math.ceil(totalProjects / limit),
+            },
+          },
+        });
+      } else {
+        // Backward compatibility - return array directly
+        res.json(transformedProjects);
+      }
     } catch (error) {
       console.error("❌ Error getting projects for selection:", error);
       res.status(500).json({

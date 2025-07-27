@@ -52,6 +52,7 @@ export interface IProject extends Document {
   latitude: number;
   longitude: number;
   developer: mongoose.Types.ObjectId; // Reference to Developer model
+  category: mongoose.Types.ObjectId; // Reference to Category model for project type (single category)
   images: string[];
   videos?: string[];
   totalUnits: number;
@@ -160,6 +161,11 @@ const ProjectSchema = new Schema<IProject>(
     developer: {
       type: Schema.Types.ObjectId,
       ref: "Developer",
+      required: true,
+    },
+    category: {
+      type: Schema.Types.ObjectId,
+      ref: "Category",
       required: true,
     },
     images: [

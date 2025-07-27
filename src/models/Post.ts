@@ -8,12 +8,12 @@ export interface IPost extends Document {
   location: {
     province: String;
     ward: String;
-    street?: String; // optional
+    street?: String; // tuỳ chọn, vì có thể ng dùng ko muốn cung cấp
   };
   category: mongoose.Types.ObjectId;
   tags: [String];
   author: { type: mongoose.Schema.Types.ObjectId; ref: "User" };
-  images: [String]; // <-- array string
+  images: [String];
   area: String;
   legalDocs: String;
   furniture: String;
@@ -26,7 +26,7 @@ export interface IPost extends Document {
   frontWidth: String;
   packageId: String;
   packageDuration: Number;
-  status: String; // pending, active, rejected, expired, inactive
+  status: String; // pending, active, rejected, expired, inactive, deleted
   priority?: String; // normal, premium, vip
   package?: String; // normal, premium, vip
   views: Number; // post view count
@@ -173,7 +173,7 @@ const postSchema = new Schema<IPost>(
     },
     status: {
       type: String,
-      enum: ["pending", "active", "rejected", "expired", "inactive"],
+      enum: ["pending", "active", "rejected", "expired", "inactive", "deleted"],
       default: "pending",
     },
     priority: {

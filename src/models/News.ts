@@ -5,7 +5,7 @@ export interface INews extends Document {
   slug: string;
   content: string;
   featuredImage?: string;
-  category: "mua-ban" | "cho-thue" | "tai-chinh" | "phong-thuy" | "tong-hop";
+  category: string;
   author: mongoose.Types.ObjectId;
   moderatedBy?: mongoose.Types.ObjectId;
   status: "draft" | "pending" | "published" | "unpublished" | "rejected";
@@ -47,7 +47,6 @@ const NewsSchema = new Schema<INews>(
     },
     category: {
       type: String,
-      enum: ["mua-ban", "cho-thue", "tai-chinh", "phong-thuy", "tong-hop"],
       required: true,
       index: true,
     },
