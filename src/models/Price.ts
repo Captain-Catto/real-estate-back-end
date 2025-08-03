@@ -89,7 +89,43 @@ export const rentPriceRangeData = [
   { id: "r0", name: "Thỏa thuận", slug: "thoa-thuan", type: "thue" },
 ];
 
+// Data mẫu cho giá dự án
+export const projectPriceRangeData = [
+  {
+    id: "du-an-1",
+    name: "Dưới 1 tỷ",
+    slug: "du-an-duoi-1-ty",
+    type: "project",
+  },
+  { id: "du-an-2", name: "1-3 tỷ", slug: "du-an-1-3-ty", type: "project" },
+  { id: "du-an-3", name: "3-5 tỷ", slug: "du-an-3-5-ty", type: "project" },
+  { id: "du-an-4", name: "5-10 tỷ", slug: "du-an-5-10-ty", type: "project" },
+  { id: "du-an-5", name: "10-20 tỷ", slug: "du-an-10-20-ty", type: "project" },
+  { id: "du-an-6", name: "20-50 tỷ", slug: "du-an-20-50-ty", type: "project" },
+  {
+    id: "du-an-7",
+    name: "Trên 50 tỷ",
+    slug: "du-an-tren-50-ty",
+    type: "project",
+  },
+];
+
 export const PriceRange = mongoose.model<IPriceRange>(
   "PriceRange",
   PriceRangeSchema
 );
+
+// Function to import project price ranges
+export const importProjectPriceRanges = async () => {
+  try {
+    for (const priceData of projectPriceRangeData) {
+      await PriceRange.findOneAndUpdate({ id: priceData.id }, priceData, {
+        upsert: true,
+        new: true,
+      });
+    }
+    console.log("✅ Project price ranges imported successfully");
+  } catch (error) {
+    console.error("❌ Error importing project price ranges:", error);
+  }
+};

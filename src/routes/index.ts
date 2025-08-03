@@ -25,6 +25,7 @@ import { UploadController } from "../controllers/UploadController";
 import { DeveloperController } from "../controllers/DeveloperController";
 import { NotificationController } from "../controllers/NotificationController";
 import { NewsCategoryController } from "../controllers/NewsCategoryController";
+import { ContactController } from "../controllers/ContactController";
 
 const router = Router();
 const indexController = new IndexController();
@@ -78,10 +79,24 @@ export function setRoutes(app: Express) {
     authController.deleteAccount.bind(authController)
   );
 
+  // User public routes
+  const userRouter = Router();
+  app.use("/api/users", userRouter);
+  userRouter.get(
+    "/public/:userId",
+    authController.getUserPublicInfo.bind(authController)
+  );
+
   // Post
   const postRouter = Router();
   app.use("/api/posts", postRouter);
   postRouter.get("/", postController.getPosts.bind(postController));
+
+  // Get featured posts (VIP/Premium posts for homepage)
+  postRouter.get(
+    "/featured",
+    postController.getFeaturedPosts.bind(postController)
+  );
 
   postRouter.get(
     "/my",
@@ -95,6 +110,12 @@ export function setRoutes(app: Express) {
     "/user/:userId",
     authenticateUser,
     postController.getPostsByUser.bind(postController)
+  );
+
+  // Public route for user posts (for user profile pages)
+  postRouter.get(
+    "/public/user/:userId",
+    postController.getPublicPostsByUser.bind(postController)
   );
   postRouter.get("/:postId", postController.getPostById.bind(postController));
 
@@ -343,6 +364,10 @@ export function setRoutes(app: Express) {
     projectController.getProjectsForSelection.bind(projectController)
   );
   projectRouter.get(
+    "/featured",
+    projectController.getFeaturedProjects.bind(projectController)
+  );
+  projectRouter.get(
     "/admin/list",
     authenticateAdmin,
     projectController.getAdminProjects.bind(projectController)
@@ -393,6 +418,10 @@ export function setRoutes(app: Express) {
   const areaRouter = Router();
   app.use("/api/areas", areaRouter);
   areaRouter.get("/", areaController.getAllAreas.bind(areaController));
+  areaRouter.get(
+    "/type/:type",
+    areaController.getAreasByType.bind(areaController)
+  );
   areaRouter.get("/:id", areaController.getAreaById.bind(areaController));
 
   // Category
@@ -1002,4 +1031,63 @@ export function setRoutes(app: Express) {
 
   // Payment Scheduler Routes (Admin only)
   app.use("/api/admin/payment-scheduler", paymentSchedulerRoutes);
+
+  // ===== CONTACT ROUTES =====
+  const contactRouter = Router();
+  app.use("/api", contactRouter);
+
+  // Public route - Send contact message
+  contactRouter.post("/contact", ContactController.createContactMessage);
+
+  // Admin routes - Contact management
+  contactRouter.get(
+    "/admin/contact",
+    authenticateAdmin,
+    ContactController.getContactMessages
+  );
+  contactRouter.get(
+    "/admin/contact/stats",
+    authenticateAdmin,
+    ContactController.getContactStats
+  );
+  contactRouter.get(
+    "/admin/contact/:id",
+    authenticateAdmin,
+    ContactController.getContactMessageById
+  );
+  contactRouter.put(
+    "/admin/contact/:id/status",
+    authenticateAdmin,
+    ContactController.updateContactMessageStatus
+  );
+  contactRouter.post(
+    "/admin/contact/:id/reply",
+    authenticateAdmin,
+    ContactController.replyToContactMessage
+  );
+  contactRouter.patch(
+    "/admin/contact/bulk/status",
+    authenticateAdmin,
+    ContactController.bulkUpdateStatus
+  );
+  contactRouter.delete(
+    "/admin/contact/:id",
+    authenticateAdmin,
+    ContactController.deleteContactMessage
+  );
+  contactRouter.post(
+    "/admin/contact/logs",
+    authenticateAdmin,
+    ContactController.createContactLog
+  );
+  contactRouter.get(
+    "/admin/contact/:contactId/logs",
+    authenticateAdmin,
+    ContactController.getContactLogs
+  );
+  contactRouter.put(
+    "/admin/contact/logs/:logId",
+    authenticateAdmin,
+    ContactController.updateContactLogNote
+  );
 }

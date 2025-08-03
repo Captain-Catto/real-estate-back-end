@@ -19,6 +19,11 @@ mongoose
   .then(() => {
     console.log("Connected to MongoDB");
 
+    // Import project price ranges
+    import("./models/Price").then(({ importProjectPriceRanges }) => {
+      importProjectPriceRanges();
+    });
+
     // Bắt đầu payment scheduler để tự động hủy giao dịch pending quá hạn
     paymentScheduler.start();
     console.log("Payment scheduler started");

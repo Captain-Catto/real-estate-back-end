@@ -296,6 +296,38 @@ export class AreaController {
       });
     }
   }
+
+  // Lấy khoảng diện tích theo type
+  async getAreasByType(req: Request, res: Response) {
+    try {
+      const { type } = req.params;
+
+      // Validate type parameter
+      if (!type || !["property", "project"].includes(type)) {
+        return res.status(400).json({
+          success: false,
+          message: "Type không hợp lệ. Chỉ chấp nhận 'property' hoặc 'project'",
+        });
+      }
+
+      const areas = await Area.find({ type, isActive: true }).sort({
+        order: 1,
+      });
+
+      res.json({
+        success: true,
+        data: areas,
+        message: `Lấy danh sách khoảng diện tích ${type} thành công`,
+      });
+    } catch (error) {
+      console.error(`Error getting areas by type ${req.params.type}:`, error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi khi lấy danh sách khoảng diện tích theo loại",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
 }
 
 export const areaController = new AreaController();

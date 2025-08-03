@@ -161,6 +161,15 @@ const defaultEmployeeMenuItems: ISidebarMenuItem[] = [
     roles: ["employee"],
   },
   {
+    id: "contact-management",
+    name: "Quản lý liên hệ",
+    href: "/employee/quan-ly-lien-he",
+    icon: "PhoneIcon",
+    order: 3.5,
+    isVisible: true,
+    roles: ["employee"],
+  },
+  {
     id: "manage-projects",
     name: "Quản lý dự án",
     href: "/employee/quan-ly-du-an",

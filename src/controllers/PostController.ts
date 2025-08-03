@@ -1,5 +1,12 @@
-import { Response } from "express";
-import { Post, Package, Category, Wallet, Payment } from "../models";
+import { Request, Response } from "express";
+import {
+  Post,
+  Package,
+  Category,
+  Wallet,
+  Payment,
+  PriceRange,
+} from "../models";
 import { AuthenticatedRequest } from "../middleware";
 import mongoose from "mongoose";
 import { ProvinceModel, WardModel } from "../models/Location";
@@ -188,6 +195,14 @@ export class PostController {
         type,
         package: packageFilter,
         project,
+        price,
+        priceRange,
+        area,
+        areaRange,
+        province,
+        provinceCode,
+        ward,
+        wardCode,
       } = req.query;
 
       // Build filter object
@@ -231,8 +246,204 @@ export class PostController {
 
       // Handle project filter
       if (project && project !== "all") {
+        console.log("🔍 Project filter detected:", {
+          project,
+          type: typeof project,
+          isValidObjectId: mongoose.Types.ObjectId.isValid(project as string),
+        });
+
         if (mongoose.Types.ObjectId.isValid(project as string)) {
-          filter["location.project"] = project;
+          const projectObjectId = new mongoose.Types.ObjectId(
+            project as string
+          );
+          filter.project = projectObjectId;
+          console.log("🔍 Added project filter to query:", {
+            originalProject: project,
+            convertedProject: projectObjectId,
+            filterProject: filter.project,
+          });
+        } else {
+          console.log("❌ Invalid project ObjectId:", project);
+          return res.status(400).json({
+            success: false,
+            message: "Invalid project ID format",
+          });
+        }
+      } else {
+        console.log("🔍 No project filter or project = 'all':", project);
+      }
+
+      // Location filtering - support both codes and slugs
+      // Province filter
+      if (provinceCode) {
+        filter["location.province"] = provinceCode;
+        console.log("📍 Filtering by provinceCode:", provinceCode);
+      } else if (province) {
+        // Handle province slug
+        const provinceSlug = province as string;
+        console.log("📍 Converting province slug to code:", provinceSlug);
+
+        try {
+          const provinceDoc = await ProvinceModel.findOne({
+            $or: [
+              { slug: provinceSlug },
+              { slug: `tinh-${provinceSlug}` },
+              { slug: `thanh-pho-${provinceSlug}` },
+            ],
+          });
+
+          if (provinceDoc) {
+            filter["location.province"] = provinceDoc.code;
+            console.log(
+              `✅ Province slug "${provinceSlug}" -> code "${provinceDoc.code}"`
+            );
+          } else {
+            console.log(`❌ Province slug "${provinceSlug}" not found`);
+          }
+        } catch (error) {
+          console.error("Error converting province slug:", error);
+        }
+      }
+
+      // Ward filter
+      if (wardCode) {
+        filter["location.ward"] = wardCode;
+        console.log("📍 Filtering by wardCode:", wardCode);
+      } else if (ward) {
+        // Handle ward slug
+        const wardSlug = ward as string;
+        console.log("📍 Converting ward slug to code:", wardSlug);
+
+        try {
+          const wardDoc = await WardModel.findOne({
+            $or: [
+              { slug: wardSlug },
+              { slug: `xa-${wardSlug}` },
+              { slug: `phuong-${wardSlug}` },
+              { slug: `thi-tran-${wardSlug}` },
+            ],
+          });
+
+          if (wardDoc) {
+            filter["location.ward"] = wardDoc.code;
+            console.log(`✅ Ward slug "${wardSlug}" -> code "${wardDoc.code}"`);
+          } else {
+            console.log(`❌ Ward slug "${wardSlug}" not found`);
+          }
+        } catch (error) {
+          console.error("Error converting ward slug:", error);
+        }
+      }
+
+      // Price range filter with overlap logic
+      if (price || priceRange) {
+        const priceParam = price || priceRange;
+        console.log("💰 Filtering by price:", priceParam);
+
+        try {
+          const { PriceRange } = await import("../models/Price");
+          const priceRangeDoc = await PriceRange.findOne({
+            $or: [{ slug: priceParam }, { id: priceParam }],
+            type: { $in: ["ban", "cho-thue"] }, // Support both buy and rent
+          });
+
+          if (priceRangeDoc) {
+            // Parse numeric values from price range name như "1 - 2 tỷ"
+            const priceMatch = priceRangeDoc.name.match(/(\d+)\s*[-–]\s*(\d+)/);
+            if (priceMatch) {
+              const minPrice = parseInt(priceMatch[1]);
+              const maxPrice = parseInt(priceMatch[2]);
+
+              // Generate overlapping price patterns
+              const priceRegexPatterns = [];
+              for (let i = minPrice - 3; i <= maxPrice + 3; i++) {
+                for (let j = i + 1; j <= maxPrice + 5; j++) {
+                  if (i <= maxPrice && j >= minPrice) {
+                    priceRegexPatterns.push(`${i}\\s*[-–]\\s*${j}\\s*tỷ`);
+                  }
+                }
+              }
+
+              if (priceRegexPatterns.length > 0) {
+                filter.price = {
+                  $regex: priceRegexPatterns.join("|"),
+                  $options: "i",
+                };
+                console.log(
+                  `✅ Price filter "${priceParam}" (${minPrice}-${maxPrice}) -> overlapping ranges pattern`
+                );
+              }
+            } else {
+              // Fallback: exact string match với flexible spacing
+              filter.price = {
+                $regex: priceRangeDoc.name.replace(/[-\s]/g, "\\s*[-–]\\s*"),
+                $options: "i",
+              };
+              console.log(
+                `✅ Price filter "${priceParam}" -> flexible pattern for: "${priceRangeDoc.name}"`
+              );
+            }
+          } else {
+            console.log(`❌ Price range "${priceParam}" not found`);
+          }
+        } catch (error) {
+          console.error("Error converting price filter:", error);
+        }
+      }
+
+      // Area range filter with overlap logic
+      if (area || areaRange) {
+        const areaParam = area || areaRange;
+        console.log("📏 Filtering by area:", areaParam);
+
+        try {
+          const { Area } = await import("../models/Area");
+          const areaRangeDoc = await Area.findOne({
+            $or: [{ slug: areaParam }, { id: areaParam }],
+            type: "property", // For posts, use property type
+          });
+
+          if (areaRangeDoc) {
+            // Parse numeric values from area range name như "50 - 100 m²"
+            const areaMatch = areaRangeDoc.name.match(/(\d+)\s*[-–]\s*(\d+)/);
+            if (areaMatch) {
+              const minArea = parseInt(areaMatch[1]);
+              const maxArea = parseInt(areaMatch[2]);
+
+              // Generate overlapping area patterns
+              const areaRegexPatterns = [];
+              for (let i = minArea - 20; i <= maxArea + 20; i += 5) {
+                for (let j = i + 10; j <= maxArea + 50; j += 5) {
+                  if (i <= maxArea && j >= minArea) {
+                    areaRegexPatterns.push(`${i}\\s*[-–]\\s*${j}\\s*m²`);
+                  }
+                }
+              }
+
+              if (areaRegexPatterns.length > 0) {
+                filter.area = {
+                  $regex: areaRegexPatterns.join("|"),
+                  $options: "i",
+                };
+                console.log(
+                  `✅ Area filter "${areaParam}" (${minArea}-${maxArea}) -> overlapping ranges pattern`
+                );
+              }
+            } else {
+              // Fallback: exact string match với flexible spacing
+              filter.area = {
+                $regex: areaRangeDoc.name.replace(/[-\s]/g, "\\s*[-–]\\s*"),
+                $options: "i",
+              };
+              console.log(
+                `✅ Area filter "${areaParam}" -> flexible pattern for: "${areaRangeDoc.name}"`
+              );
+            }
+          } else {
+            console.log(`❌ Area range "${areaParam}" not found`);
+          }
+        } catch (error) {
+          console.error("Error converting area filter:", error);
         }
       }
 
@@ -257,10 +468,12 @@ export class PostController {
         ];
       }
 
+      console.log("🔍 Final filter object:", JSON.stringify(filter, null, 2));
+
       const posts = await Post.find(filter)
         .populate("author", "username email avatar")
         .populate("category", "name slug")
-        .populate("location.project", "name address")
+        .populate("project", "name address")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
@@ -575,6 +788,61 @@ export class PostController {
       });
     } catch (error) {
       console.error("Get posts by user error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  // Get public posts by user - for user profile pages
+  async getPublicPostsByUser(req: Request, res: Response) {
+    try {
+      const userId = req.params.userId;
+      if (!userId || !mongoose.Types.ObjectId.isValid(userId as string)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or missing userId",
+        });
+      }
+
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 12;
+      const status = (req.query.status as string) || "active";
+      const skip = (page - 1) * limit;
+
+      // Only show active posts for public view
+      const query: any = {
+        author: userId,
+        status: status, // "active" by default
+      };
+
+      const posts = await Post.find(query)
+        .populate("author", "username avatar")
+        .populate("category", "name slug")
+        .populate("location.province", "name")
+        .populate("location.ward", "name")
+        .select("-content") // Exclude full content for performance
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      const totalPosts = await Post.countDocuments(query);
+
+      res.json({
+        success: true,
+        data: {
+          posts,
+          pagination: {
+            currentPage: page,
+            totalPages: Math.ceil(totalPosts / limit),
+            totalItems: totalPosts,
+            itemsPerPage: limit,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Get public posts by user error:", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -926,6 +1194,204 @@ export class PostController {
     }
   }
 
+  async convertPriceSlugToRange(
+    priceSlug: string
+  ): Promise<{ min?: number; max?: number } | null> {
+    console.log(`Converting price slug: "${priceSlug}"`);
+
+    try {
+      // First, try to find the price range in database by slug
+      const priceRange = await PriceRange.findOne({
+        slug: priceSlug.toLowerCase(),
+        isActive: true,
+      });
+
+      if (priceRange) {
+        console.log(`Found price range in database for "${priceSlug}":`, {
+          name: priceRange.name,
+          type: priceRange.type,
+          minValue: priceRange.minValue,
+          maxValue: priceRange.maxValue,
+        });
+
+        const result: { min?: number; max?: number } = {};
+
+        // Set minimum value if exists and > 0
+        if (priceRange.minValue && priceRange.minValue > 0) {
+          result.min = priceRange.minValue;
+        }
+
+        // Set maximum value if exists and not -1 (unlimited)
+        if (priceRange.maxValue && priceRange.maxValue !== -1) {
+          result.max = priceRange.maxValue;
+        }
+
+        console.log(`Converted to range:`, result);
+        return result;
+      }
+
+      // Fallback: If not found in database, try to extract from common slug patterns
+      console.log(
+        `Price range not found in database for "${priceSlug}", trying pattern matching...`
+      );
+
+      // Pattern for ranges like "thue-5-10-trieu"
+      const rangeMatch = priceSlug.match(/(\d+)-(\d+)-(trieu|ty)/);
+      if (rangeMatch) {
+        const [, min, max, unit] = rangeMatch;
+        const multiplier = unit === "ty" ? 1000000000 : 1000000; // 1 tỷ hoặc 1 triệu
+
+        const result = {
+          min: parseInt(min) * multiplier,
+          max: parseInt(max) * multiplier,
+        };
+
+        console.log(`Extracted from pattern "${priceSlug}":`, result);
+        return result;
+      }
+
+      // Pattern for "under" ranges like "thue-duoi-5-trieu"
+      const underMatch = priceSlug.match(/duoi-(\d+)-(trieu|ty)/);
+      if (underMatch) {
+        const [, max, unit] = underMatch;
+        const multiplier = unit === "ty" ? 1000000000 : 1000000;
+
+        const result = {
+          max: parseInt(max) * multiplier,
+        };
+
+        console.log(`Extracted "under" pattern from "${priceSlug}":`, result);
+        return result;
+      }
+
+      // Pattern for "over" ranges like "thue-tren-50-trieu"
+      const overMatch = priceSlug.match(/tren-(\d+)-(trieu|ty)/);
+      if (overMatch) {
+        const [, min, unit] = overMatch;
+        const multiplier = unit === "ty" ? 1000000000 : 1000000;
+
+        const result = {
+          min: parseInt(min) * multiplier,
+        };
+
+        console.log(`Extracted "over" pattern from "${priceSlug}":`, result);
+        return result;
+      }
+
+      // Special cases
+      if (priceSlug.includes("thoa-thuan")) {
+        console.log(`Negotiable price detected for "${priceSlug}"`);
+        return {}; // Empty object means no price filter
+      }
+
+      console.log(`No price range found for slug: "${priceSlug}"`);
+      return null;
+    } catch (error) {
+      console.error(`Error converting price slug "${priceSlug}":`, error);
+
+      // Fallback to basic pattern matching if database query fails
+      console.log(`Database query failed, using fallback for "${priceSlug}"`);
+
+      // Basic fallback patterns for common cases
+      const fallbackRanges: { [key: string]: { min?: number; max?: number } } =
+        {
+          "thue-5-10-trieu": { min: 5000000, max: 10000000 },
+          "thue-duoi-5-trieu": { max: 5000000 },
+          "thue-tren-20-trieu": { min: 20000000 },
+          "ban-duoi-500-trieu": { max: 500000000 },
+          "ban-1-2-ty": { min: 1000000000, max: 2000000000 },
+          "ban-tren-5-ty": { min: 5000000000 },
+        };
+
+      const fallback = fallbackRanges[priceSlug.toLowerCase()];
+      if (fallback) {
+        console.log(`Using fallback range for "${priceSlug}":`, fallback);
+        return fallback;
+      }
+
+      return null;
+    }
+  }
+
+  async convertAreaSlugToRange(
+    areaSlug: string
+  ): Promise<{ min?: number; max?: number } | null> {
+    console.log(`Converting area slug: "${areaSlug}"`);
+
+    try {
+      // First, try to find the area range in database by slug
+      const Area = (await import("../models")).Area;
+      const areaRange = await Area.findOne({
+        slug: areaSlug.toLowerCase(),
+        isActive: true,
+      });
+
+      if (areaRange) {
+        console.log(`Found area range in database for "${areaSlug}":`, {
+          name: areaRange.name,
+          minValue: areaRange.minValue,
+          maxValue: areaRange.maxValue,
+        });
+
+        const result: { min?: number; max?: number } = {};
+
+        // Set minimum value if exists and > 0
+        if (areaRange.minValue && areaRange.minValue > 0) {
+          result.min = areaRange.minValue;
+        }
+
+        // Set maximum value if exists and not -1 (unlimited)
+        if (areaRange.maxValue && areaRange.maxValue !== -1) {
+          result.max = areaRange.maxValue;
+        }
+
+        console.log(`Converted area range for "${areaSlug}":`, result);
+        return result;
+      }
+
+      // Fallback: If not found in database, try to extract from common slug patterns
+      console.log(
+        `Area range not found in database for "${areaSlug}", trying pattern matching...`
+      );
+
+      // Pattern for ranges like "30-50-m2"
+      const rangeMatch = areaSlug.match(/(\d+)-(\d+)-m2/);
+      if (rangeMatch) {
+        const [, min, max] = rangeMatch;
+        const result = {
+          min: parseInt(min),
+          max: parseInt(max),
+        };
+        console.log(`Extracted area from pattern "${areaSlug}":`, result);
+        return result;
+      }
+
+      // Pattern for "under" ranges like "duoi-30-m2"
+      const underMatch = areaSlug.match(/duoi-(\d+)-m2/);
+      if (underMatch) {
+        const [, max] = underMatch;
+        const result = { max: parseInt(max) };
+        console.log(`Extracted area from under pattern "${areaSlug}":`, result);
+        return result;
+      }
+
+      // Pattern for "over" ranges like "tren-500-m2"
+      const overMatch = areaSlug.match(/tren-(\d+)-m2/);
+      if (overMatch) {
+        const [, min] = overMatch;
+        const result = { min: parseInt(min) };
+        console.log(`Extracted area from over pattern "${areaSlug}":`, result);
+        return result;
+      }
+
+      console.log(`No area range found for slug: "${areaSlug}"`);
+      return null;
+    } catch (error) {
+      console.error(`Error converting area slug "${areaSlug}":`, error);
+      return null;
+    }
+  }
+
   async convertLocationSlugToCode(
     locationParam: string | undefined
   ): Promise<string | null> {
@@ -943,26 +1409,42 @@ export class PostController {
 
     // Chuyển đổi từ slug sang code
     try {
-      // Tìm trong tất cả các tỉnh/thành với districts và wards
-      const allLocations = await WardModel.find({});
-      console.log(`Found ${allLocations.length} locations to search`);
-
       // Normalize slug để so sánh (chuyển từ hyphen sang underscore)
       const normalizedSlug = locationParam.replace(/-/g, "_");
       console.log(`Normalized slug: "${normalizedSlug}"`);
 
-      // Tìm trong provinces
-      for (const location of allLocations) {
-        // So sánh với slug có sẵn trong database
-        if (location.slug === normalizedSlug) {
-          console.log(
-            `Found province match by slug: "${location.name}" -> code ${location.code}`
-          );
-          return location.code?.toString() || null;
-        }
+      // Debug: Check what provinces are available in database
+      const allProvinces = await ProvinceModel.find({}).limit(5);
+      console.log(
+        `Sample provinces in DB:`,
+        allProvinces.map((p) => ({
+          name: p.name,
+          slug: p.slug,
+          code: p.code,
+        }))
+      );
+
+      // Tìm trong provinces trước
+      const province = await ProvinceModel.findOne({ slug: normalizedSlug });
+      if (province) {
+        console.log(
+          `Found province match by slug: "${province.name}" -> code ${province.code}`
+        );
+        return province.code?.toString() || null;
       }
 
-      // Tìm trong wards thông qua truy vấn riêng
+      // If not found with underscore, try with original hyphen format
+      const provinceWithHyphen = await ProvinceModel.findOne({
+        slug: locationParam,
+      });
+      if (provinceWithHyphen) {
+        console.log(
+          `Found province match with hyphen slug: "${provinceWithHyphen.name}" -> code ${provinceWithHyphen.code}`
+        );
+        return provinceWithHyphen.code?.toString() || null;
+      }
+
+      // Nếu không tìm thấy province, tìm trong wards
       const ward = await WardModel.findOne({ slug: normalizedSlug });
       if (ward) {
         console.log(
@@ -1000,15 +1482,36 @@ export class PostController {
       const normalizedSlug = wardSlug.replace(/-/g, "_");
       console.log(`Normalized ward slug: "${normalizedSlug}"`);
 
-      // Tìm ward trực tiếp qua parent_code (provinceCode) và slug
-      const ward = await WardModel.findOne({
+      // Debug: Check what wards are available in this province
+      const sampleWards = await WardModel.find({
+        parent_code: provinceCode,
+      }).limit(3);
+      console.log(
+        `Sample wards in province ${provinceCode}:`,
+        sampleWards.map((w) => ({
+          name: w.name,
+          slug: w.slug,
+          code: w.code,
+        }))
+      );
+
+      // Tìm ward trực tiếp qua parent_code (provinceCode) và slug với underscore
+      let ward = await WardModel.findOne({
         parent_code: provinceCode,
         slug: normalizedSlug,
       });
 
       if (!ward) {
+        // If not found with underscore, try with original hyphen format
+        ward = await WardModel.findOne({
+          parent_code: provinceCode,
+          slug: wardSlug,
+        });
+      }
+
+      if (!ward) {
         console.log(
-          `Ward not found with slug: ${normalizedSlug} in province ${provinceCode}`
+          `Ward not found with slug: "${wardSlug}" (normalized: "${normalizedSlug}") in province ${provinceCode}`
         );
         return null;
       }
@@ -1028,27 +1531,34 @@ export class PostController {
         type,
         category,
         city,
+        province,
         districts,
         wards,
         price,
         area,
         propertyId,
+        project,
       } = req.query;
 
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
       const skip = (page - 1) * limit;
 
+      // Use province parameter if available, otherwise fall back to city
+      const locationParam = province || city;
+
       // 1. Log điều kiện tìm kiếm
       console.log("Search criteria:", {
         type,
         category,
         city,
-        province: city, // Thay thế city bằng province cho rõ ràng
+        province,
+        locationParam, // Show which parameter we're actually using
         wards,
         price,
         area,
         propertyId,
+        project,
       });
 
       // 2. Xây dựng filter TRƯỚC khi truy vấn
@@ -1067,35 +1577,126 @@ export class PostController {
       ];
 
       if (type) filter.type = type.toString();
-      if (category) filter.category = category.toString();
+
+      // Handle category - convert slug to ObjectId
+      if (category) {
+        try {
+          // First try to find category by slug
+          const categoryDoc = await Category.findOne({
+            slug: category.toString(),
+          });
+          if (categoryDoc) {
+            filter.category = categoryDoc._id;
+            console.log(
+              `Found category by slug "${category}":`,
+              categoryDoc._id
+            );
+          } else {
+            // If not found by slug, try as ObjectId
+            if (mongoose.Types.ObjectId.isValid(category.toString())) {
+              filter.category = new mongoose.Types.ObjectId(
+                category.toString()
+              );
+              console.log(`Using category as ObjectId:`, category);
+            } else {
+              console.log(
+                `Category "${category}" not found by slug and not valid ObjectId`
+              );
+              // Return empty result if category doesn't exist
+              return res.json({
+                success: true,
+                data: {
+                  posts: [],
+                  pagination: {
+                    currentPage: page,
+                    totalPages: 0,
+                    totalItems: 0,
+                    itemsPerPage: limit,
+                  },
+                  searchCriteria: { category: category.toString() },
+                },
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Error processing category:", error);
+          filter.category = category.toString(); // Fallback to original behavior
+        }
+      }
+
+      // Handle project filter
+      if (project && project !== "all") {
+        console.log("🔍 Project filter detected:", {
+          project,
+          type: typeof project,
+          isValidObjectId: mongoose.Types.ObjectId.isValid(project as string),
+        });
+
+        if (mongoose.Types.ObjectId.isValid(project as string)) {
+          const projectObjectId = new mongoose.Types.ObjectId(
+            project as string
+          );
+          filter.project = projectObjectId;
+          console.log("🔍 Added project filter to query:", {
+            originalProject: project,
+            convertedProject: projectObjectId,
+            filterProject: filter.project,
+          });
+        } else {
+          console.log("❌ Invalid project ObjectId:", project);
+          return res.status(400).json({
+            success: false,
+            message: "Invalid project ID format",
+          });
+        }
+      } else {
+        console.log("🔍 No project filter or project = 'all':", project);
+      }
 
       // Lưu lại cityCode để sử dụng cho ward lookup
       let cityCode: string | null = null;
+      let provinceFilter: any = null;
 
-      // Xử lý city có thể là slug hoặc code
-      if (city) {
-        cityCode = await this.convertLocationSlugToCode(city.toString());
+      // Xử lý location (city or province) có thể là slug hoặc code
+      if (locationParam) {
+        console.log(`Processing location parameter: "${locationParam}"`);
+        cityCode = await this.convertLocationSlugToCode(
+          locationParam.toString()
+        );
         if (cityCode) {
+          console.log(
+            `Location slug "${locationParam}" converted to code: ${cityCode}`
+          );
           // Tìm cả theo code và tên
           const cityLocation = await ProvinceModel.findOne({
             code: Number(cityCode),
           });
           const cityName = cityLocation?.name;
+          console.log(`Found location name: ${cityName} for code: ${cityCode}`);
 
           if (cityName) {
-            filter["$or"] = [
-              { "location.province": cityCode },
-              { "location.province": cityName },
-            ];
+            provinceFilter = {
+              $or: [
+                { "location.province": cityCode },
+                { "location.province": cityName },
+              ],
+            };
+            console.log(
+              `Prepared province filter with both code and name:`,
+              provinceFilter
+            );
           } else {
-            filter["location.province"] = cityCode;
+            provinceFilter = { "location.province": cityCode };
+            console.log(`Prepared province filter with code only: ${cityCode}`);
           }
         } else {
-          filter["location.province"] = city.toString();
+          // If conversion failed, use the original parameter as fallback
+          provinceFilter = { "location.province": locationParam.toString() };
+          console.log(
+            `Location conversion failed, using original parameter: "${locationParam}"`
+          );
         }
-      }
-
-      // Lưu lại districtCodes để sử dụng cho ward lookup
+      } // Lưu lại districtCodes để sử dụng cho ward lookup
       let districtCodes: string[] = [];
 
       // Xử lý districts có thể là slug hoặc code
@@ -1106,7 +1707,9 @@ export class PostController {
         districtCodes = [];
       }
 
-      // Xử lý wards có thể là slug hoặc code - QUAN TRỌNG: Tìm trong district cụ thể
+      // Xử lý wards có thể là slug hoặc code - QUAN TRỌNG: Tìm trong province cụ thể
+      let wardFilter: any = null;
+
       if (wards) {
         console.log("Processing wards:", wards);
         console.log("Wards type:", typeof wards);
@@ -1116,8 +1719,10 @@ export class PostController {
           const wardCodes: string[] = [];
 
           for (const w of wardsList) {
+            console.log(`Processing ward: "${w}"`);
             // Tìm ward dựa trên provinceCode
             if (cityCode) {
+              console.log(`Looking for ward "${w}" in province ${cityCode}`);
               // Giữ lại districtCode để không phải thay đổi signature của hàm
               const code = await this.convertWardSlugToCodeInDistrict(
                 w,
@@ -1129,45 +1734,167 @@ export class PostController {
                 console.log(
                   `Ward slug "${w}" -> code "${code}" in province ${cityCode}`
                 );
+              } else {
+                console.log(`Ward "${w}" not found in province ${cityCode}`);
               }
             } else {
               // Fallback về cách cũ nếu không có province context
+              console.log(
+                `No province context, using fallback conversion for ward "${w}"`
+              );
               const code = await this.convertLocationSlugToCode(w);
               if (code) {
                 wardCodes.push(code);
                 console.log(`Ward slug "${w}" -> code "${code}" (fallback)`);
+              } else {
+                console.log(`Ward "${w}" not found in fallback conversion`);
               }
             }
           }
 
           if (wardCodes.length > 0) {
-            filter["location.ward"] = { $in: wardCodes };
-            console.log("Applied ward filter:", filter["location.ward"]);
+            wardFilter = { "location.ward": { $in: wardCodes } };
+            console.log("Prepared ward filter:", wardFilter);
+          } else {
+            // If ward parameter was provided but no valid codes found,
+            // set impossible condition to return no results (since specific ward was requested but doesn't exist)
+            console.log(
+              "Ward parameter provided but no valid codes found, setting impossible filter"
+            );
+            wardFilter = { "location.ward": { $in: ["__WARD_NOT_FOUND__"] } };
+            console.log("Set impossible ward filter to return no results");
           }
         }
       }
 
-      // Handle price with proper type checking
-      if (price && typeof price === "string") {
-        const [minPrice, maxPrice] = price.split("-");
-        filter.price = {};
-        if (minPrice && !isNaN(parseFloat(minPrice))) {
-          filter.price.$gte = parseFloat(minPrice);
+      // Combine province and ward filters properly
+      if (provinceFilter && wardFilter) {
+        // Both province and ward specified - combine them with $and
+        console.log("Combining province and ward filters with $and");
+        console.log("Province filter:", JSON.stringify(provinceFilter));
+        console.log("Ward filter:", JSON.stringify(wardFilter));
+
+        // Handle the case where provinceFilter has $or condition
+        if (provinceFilter.$or) {
+          // Create a complex condition: (province condition) AND (ward condition)
+          filter.$and = [
+            ...(filter.$and || []),
+            { $or: provinceFilter.$or },
+            wardFilter,
+          ];
+        } else {
+          // Simple case: combine both filters
+          filter.$and = [...(filter.$and || []), provinceFilter, wardFilter];
         }
-        if (maxPrice && !isNaN(parseFloat(maxPrice))) {
-          filter.price.$lte = parseFloat(maxPrice);
+
+        console.log(
+          "Combined location filter with $and:",
+          JSON.stringify(filter.$and)
+        );
+      } else if (provinceFilter) {
+        // Only province specified
+        console.log("Applying province filter only");
+        if (provinceFilter.$or) {
+          // Handle $or condition properly - add to existing $and
+          filter.$and = [...(filter.$and || []), { $or: provinceFilter.$or }];
+          console.log(
+            "Applied province $or filter to $and:",
+            JSON.stringify(filter.$and)
+          );
+        } else {
+          // Simple assignment for single field filters
+          Object.assign(filter, provinceFilter);
+          console.log(
+            "Applied simple province filter:",
+            JSON.stringify(provinceFilter)
+          );
+        }
+      } else if (wardFilter) {
+        // Only ward specified (rare case)
+        console.log("Applying ward filter only");
+        Object.assign(filter, wardFilter);
+        console.log("Applied ward-only filter:", JSON.stringify(wardFilter));
+      }
+
+      // Handle price - support both numeric ranges and descriptive slugs
+      if (price && typeof price === "string") {
+        console.log(`Processing price parameter: "${price}"`);
+
+        // Check if it's a numeric range format (e.g., "1000000-2000000")
+        if (price.includes("-") && !isNaN(parseFloat(price.split("-")[0]))) {
+          console.log("Price is in numeric range format");
+          const [minPrice, maxPrice] = price.split("-");
+          filter.price = {};
+          if (minPrice && !isNaN(parseFloat(minPrice))) {
+            filter.price.$gte = parseFloat(minPrice);
+          }
+          if (maxPrice && !isNaN(parseFloat(maxPrice))) {
+            filter.price.$lte = parseFloat(maxPrice);
+          }
+        } else {
+          // Handle descriptive price slugs (e.g., "ban-tren-15-ty")
+          console.log("Price is in slug format, converting to numeric range");
+          const priceRange = await this.convertPriceSlugToRange(price);
+          if (priceRange) {
+            filter.price = {};
+            if (priceRange.min !== undefined) {
+              filter.price.$gte = priceRange.min;
+              console.log(`Set minimum price: ${priceRange.min}`);
+            }
+            if (priceRange.max !== undefined) {
+              filter.price.$lte = priceRange.max;
+              console.log(`Set maximum price: ${priceRange.max}`);
+            }
+            // If no min/max (like "thoa-thuan"), don't add price filter
+            if (Object.keys(filter.price).length === 0) {
+              delete filter.price;
+              console.log("Price is negotiable, removed price filter");
+            }
+          } else {
+            console.log(
+              `Unknown price format: "${price}", ignoring price filter`
+            );
+          }
         }
       }
 
-      // Handle area with proper type checking
+      // Handle area - support both numeric ranges and descriptive slugs
       if (area && typeof area === "string") {
-        const [minArea, maxArea] = area.split("-");
-        filter.area = {};
-        if (minArea && !isNaN(parseFloat(minArea))) {
-          filter.area.$gte = parseFloat(minArea);
-        }
-        if (maxArea && !isNaN(parseFloat(maxArea))) {
-          filter.area.$lte = parseFloat(maxArea);
+        console.log(`Processing area parameter: "${area}"`);
+
+        // Check if it's a numeric range format (e.g., "30-50")
+        if (area.includes("-") && !isNaN(parseFloat(area.split("-")[0]))) {
+          console.log("Area is in numeric range format");
+          const [minArea, maxArea] = area.split("-");
+          filter.area = {};
+          if (minArea && !isNaN(parseFloat(minArea))) {
+            filter.area.$gte = parseFloat(minArea);
+          }
+          if (maxArea && !isNaN(parseFloat(maxArea))) {
+            filter.area.$lte = parseFloat(maxArea);
+          }
+        } else {
+          // Handle descriptive area slugs (e.g., "30-50-m2", "duoi-30-m2")
+          console.log("Area is in slug format, converting to numeric range");
+          const areaRange = await this.convertAreaSlugToRange(area);
+          if (areaRange) {
+            filter.area = {};
+            if (areaRange.min !== undefined) {
+              filter.area.$gte = areaRange.min;
+              console.log(`Set minimum area: ${areaRange.min}`);
+            }
+            if (areaRange.max !== undefined) {
+              filter.area.$lte = areaRange.max;
+              console.log(`Set maximum area: ${areaRange.max}`);
+            }
+            // If no min/max (like unlimited area), don't add area filter
+            if (Object.keys(filter.area).length === 0) {
+              delete filter.area;
+              console.log("Area is unlimited, removed area filter");
+            }
+          } else {
+            console.log(`Unknown area format: "${area}", ignoring area filter`);
+          }
         }
       }
 
@@ -1220,8 +1947,7 @@ export class PostController {
             searchCriteria: {
               type,
               category,
-              city,
-              districts,
+              province: locationParam,
               wards,
               price,
               area,
@@ -1299,7 +2025,7 @@ export class PostController {
           searchCriteria: {
             type,
             category,
-            province: city,
+            province: locationParam,
             wards,
             price,
             area,
@@ -1731,6 +2457,264 @@ export class PostController {
       });
     } catch (error) {
       console.error("Increment views error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  // Get posts by user with filters (public posts only)
+  async getUserPublicPosts(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { userId } = req.params;
+      const {
+        type,
+        page = 1,
+        limit = 12,
+        sortBy = "createdAt",
+        sortOrder = "desc",
+      } = req.query;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: "User ID is required",
+        });
+      }
+
+      // Build filter
+      const filter: any = {
+        user: userId,
+        status: "active", // Only active posts for public view
+      };
+
+      if (type && type !== "all") {
+        filter.type = type;
+      }
+
+      const pageNum = parseInt(page as string, 10);
+      const limitNum = parseInt(limit as string, 10);
+      const skip = (pageNum - 1) * limitNum;
+
+      // Build sort
+      const sort: any = {};
+      sort[sortBy as string] = sortOrder === "desc" ? -1 : 1;
+
+      // Get posts with user info
+      const posts = await Post.find(filter)
+        .populate("user", "username avatar")
+        .populate("category", "name slug")
+        .populate("project", "name")
+        .sort(sort)
+        .skip(skip)
+        .limit(limitNum)
+        .lean();
+
+      // Get total count
+      const total = await Post.countDocuments(filter);
+
+      res.json({
+        success: true,
+        data: {
+          posts,
+          pagination: {
+            currentPage: pageNum,
+            totalPages: Math.ceil(total / limitNum),
+            totalPosts: total,
+            hasMore: total > pageNum * limitNum,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Get user public posts error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  // Get user posts stats (public)
+  async getUserPostsStats(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { userId } = req.params;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: "User ID is required",
+        });
+      }
+
+      // Get stats for active posts only
+      const stats = await Post.aggregate([
+        {
+          $match: {
+            user: new mongoose.Types.ObjectId(userId),
+            status: "active",
+          },
+        },
+        {
+          $group: {
+            _id: "$type",
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      // Get total active posts
+      const totalActive = await Post.countDocuments({
+        user: userId,
+        status: "active",
+      });
+
+      // Get total posts (all statuses)
+      const totalPosts = await Post.countDocuments({
+        user: userId,
+      });
+
+      const result = {
+        totalPosts,
+        totalActive,
+        sellPosts: 0,
+        rentPosts: 0,
+      };
+
+      stats.forEach((stat) => {
+        if (stat._id === "ban") {
+          result.sellPosts = stat.count;
+        } else if (stat._id === "cho-thue") {
+          result.rentPosts = stat.count;
+        }
+      });
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      console.error("Get user posts stats error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  // Get featured posts (VIP/Premium posts for homepage)
+  async getFeaturedPosts(req: AuthenticatedRequest, res: Response) {
+    try {
+      const limit = parseInt(req.query.limit as string) || 8;
+
+      // Build aggregation pipeline to get featured posts
+      const pipeline: any[] = [
+        {
+          $match: {
+            status: "active",
+          },
+        },
+        {
+          $addFields: {
+            // Calculate priority score for sorting
+            priorityScore: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ["$priority", "vip"] }, then: 4 },
+                  { case: { $eq: ["$priority", "premium"] }, then: 3 },
+                  { case: { $eq: ["$priority", "normal"] }, then: 2 },
+                ],
+                default: 1,
+              },
+            },
+            packageScore: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ["$package", "vip"] }, then: 4 },
+                  { case: { $eq: ["$package", "premium"] }, then: 3 },
+                  { case: { $eq: ["$package", "basic"] }, then: 2 },
+                ],
+                default: 1,
+              },
+            },
+          },
+        },
+        {
+          $sort: {
+            priorityScore: -1,
+            packageScore: -1,
+            createdAt: -1,
+          },
+        },
+        {
+          $limit: limit,
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "author",
+            foreignField: "_id",
+            as: "author",
+            pipeline: [
+              {
+                $project: {
+                  username: 1,
+                  email: 1,
+                  avatar: 1,
+                },
+              },
+            ],
+          },
+        },
+        {
+          $unwind: {
+            path: "$author",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "category",
+            foreignField: "_id",
+            as: "category",
+            pipeline: [
+              {
+                $project: {
+                  name: 1,
+                  slug: 1,
+                },
+              },
+            ],
+          },
+        },
+        {
+          $unwind: {
+            path: "$category",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $project: {
+            priorityScore: 0,
+            packageScore: 0,
+          },
+        },
+      ];
+
+      const posts = await Post.aggregate(pipeline);
+
+      console.log(`Found ${posts.length} featured posts`);
+
+      res.json({
+        success: true,
+        data: {
+          posts,
+          total: posts.length,
+        },
+      });
+    } catch (error) {
+      console.error("Get featured posts error:", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",

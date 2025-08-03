@@ -26,15 +26,222 @@ export class ProjectController {
         };
       }
 
-      // Filter by location codes (prioritized over fullLocation)
+      // Filter by location - support both codes and slugs
+      // Province filter
       if (req.query.provinceCode) {
         filter["location.provinceCode"] = req.query.provinceCode;
-        console.log("📍 Filtering by province:", req.query.provinceCode);
+        console.log("📍 Filtering by provinceCode:", req.query.provinceCode);
+      } else if (req.query.province) {
+        // Handle province slug
+        const provinceSlug = req.query.province as string;
+        console.log("📍 Converting province slug to code:", provinceSlug);
+
+        try {
+          const { ProvinceModel } = await import("../models/Location");
+          const province = await ProvinceModel.findOne({
+            $or: [
+              { slug: provinceSlug },
+              { slug: `tinh-${provinceSlug}` },
+              { slug: `thanh-pho-${provinceSlug}` },
+            ],
+          });
+
+          if (province) {
+            filter["location.provinceCode"] = province.code;
+            console.log(
+              `✅ Province slug "${provinceSlug}" -> code "${province.code}"`
+            );
+          } else {
+            console.log(`❌ Province slug "${provinceSlug}" not found`);
+          }
+        } catch (error) {
+          console.error("Error converting province slug:", error);
+        }
       }
 
+      // Ward filter
       if (req.query.wardCode) {
         filter["location.wardCode"] = req.query.wardCode;
-        console.log("🏠 Filtering by ward:", req.query.wardCode);
+        console.log("🏠 Filtering by wardCode:", req.query.wardCode);
+      } else if (req.query.ward && filter["location.provinceCode"]) {
+        // Handle ward slug - need province context
+        const wardSlug = req.query.ward as string;
+        const provinceCode = filter["location.provinceCode"];
+        console.log(
+          "🏠 Converting ward slug to code:",
+          wardSlug,
+          "in province:",
+          provinceCode
+        );
+
+        try {
+          const { WardModel } = await import("../models/Location");
+          const ward = await WardModel.findOne({
+            parent_code: provinceCode,
+            $or: [{ slug: wardSlug }, { slug: wardSlug.replace(/-/g, "_") }],
+          });
+
+          if (ward) {
+            filter["location.wardCode"] = ward.code;
+            console.log(`✅ Ward slug "${wardSlug}" -> code "${ward.code}"`);
+          } else {
+            console.log(
+              `❌ Ward slug "${wardSlug}" not found in province ${provinceCode}`
+            );
+          }
+        } catch (error) {
+          console.error("Error converting ward slug:", error);
+        }
+      }
+
+      // Category filter - support both ID and slug
+      if (req.query.categoryId) {
+        filter.category = req.query.categoryId;
+        console.log("🏷️ Filtering by categoryId:", req.query.categoryId);
+      } else if (req.query.category) {
+        // Handle category slug
+        const categorySlug = req.query.category as string;
+        console.log("🏷️ Converting category slug to ID:", categorySlug);
+
+        try {
+          const { Category } = await import("../models");
+          const category = await Category.findOne({ slug: categorySlug });
+
+          if (category) {
+            filter.category = category._id;
+            console.log(
+              `✅ Category slug "${categorySlug}" -> ID "${category._id}"`
+            );
+          } else {
+            console.log(`❌ Category slug "${categorySlug}" not found`);
+          }
+        } catch (error) {
+          console.error("Error converting category slug:", error);
+        }
+      }
+
+      // Price range filter
+      if (req.query.price || req.query.priceRange) {
+        const priceParam = req.query.price || req.query.priceRange;
+        console.log("💰 Filtering by price:", priceParam);
+
+        try {
+          const { PriceRange } = await import("../models/Price");
+          const priceRange = await PriceRange.findOne({
+            $or: [{ slug: priceParam }, { id: priceParam }],
+            type: "project",
+          });
+
+          if (priceRange) {
+            // Parse numeric values from price range name như "5 - 10 tỷ"
+            const priceMatch = priceRange.name.match(/(\d+)\s*[-–]\s*(\d+)/);
+            if (priceMatch) {
+              const minPrice = parseInt(priceMatch[1]);
+              const maxPrice = parseInt(priceMatch[2]);
+
+              // Tìm tất cả dự án có priceRange overlap với range này
+              const priceRegexPatterns = [];
+
+              // Tạo regex cho các range có thể overlap: 3-5, 5-8, 8-12 cho filter 5-10
+              for (let i = minPrice - 3; i <= maxPrice + 3; i++) {
+                for (let j = i + 1; j <= maxPrice + 5; j++) {
+                  if (
+                    i <= maxPrice &&
+                    j >= minPrice // Check overlap
+                  ) {
+                    // Tạo pattern cho i-j tỷ (với hoặc không có khoảng trắng)
+                    priceRegexPatterns.push(`${i}\\s*[-–]\\s*${j}\\s*tỷ`);
+                  }
+                }
+              }
+
+              if (priceRegexPatterns.length > 0) {
+                filter.priceRange = {
+                  $regex: priceRegexPatterns.join("|"),
+                  $options: "i",
+                };
+                console.log(
+                  `✅ Price filter "${priceParam}" (${minPrice}-${maxPrice}) -> overlapping ranges pattern`
+                );
+              }
+            } else {
+              // Fallback: exact string match với flexible spacing
+              filter.priceRange = {
+                $regex: priceRange.name.replace(/[-\s]/g, "\\s*[-–]\\s*"),
+                $options: "i",
+              };
+              console.log(
+                `✅ Price filter "${priceParam}" -> flexible pattern for: "${priceRange.name}"`
+              );
+            }
+          } else {
+            console.log(`❌ Price range "${priceParam}" not found`);
+          }
+        } catch (error) {
+          console.error("Error converting price filter:", error);
+        }
+      }
+
+      // Area range filter
+      if (req.query.area || req.query.areaRange) {
+        const areaParam = req.query.area || req.query.areaRange;
+        console.log("📏 Filtering by area:", areaParam);
+
+        try {
+          const { Area } = await import("../models/Area");
+          const areaRange = await Area.findOne({
+            $or: [{ slug: areaParam }, { id: areaParam }],
+            type: "project",
+          });
+
+          if (areaRange) {
+            // Parse numeric values from area range name như "100 - 200 m²"
+            const areaMatch = areaRange.name.match(/(\d+)\s*[-–]\s*(\d+)/);
+            if (areaMatch) {
+              const minArea = parseInt(areaMatch[1]);
+              const maxArea = parseInt(areaMatch[2]);
+
+              // Tìm tất cả dự án có area overlap với range này
+              const areaRegexPatterns = [];
+
+              // Tạo regex cho các range có thể overlap: 80-120, 100-200, 150-300 cho filter 100-200
+              for (let i = minArea - 50; i <= maxArea + 50; i += 10) {
+                for (let j = i + 20; j <= maxArea + 100; j += 10) {
+                  if (
+                    i <= maxArea &&
+                    j >= minArea // Check overlap
+                  ) {
+                    // Tạo pattern cho i-j m² (với hoặc không có khoảng trắng)
+                    areaRegexPatterns.push(`${i}\\s*[-–]\\s*${j}\\s*m²`);
+                  }
+                }
+              }
+
+              if (areaRegexPatterns.length > 0) {
+                filter.area = {
+                  $regex: areaRegexPatterns.join("|"),
+                  $options: "i",
+                };
+                console.log(
+                  `✅ Area filter "${areaParam}" (${minArea}-${maxArea}) -> overlapping ranges pattern`
+                );
+              }
+            } else {
+              // Fallback: exact string match với flexible spacing
+              filter.area = {
+                $regex: areaRange.name.replace(/[-\s]/g, "\\s*[-–]\\s*"),
+                $options: "i",
+              };
+              console.log(
+                `✅ Area filter "${areaParam}" -> flexible pattern for: "${areaRange.name}"`
+              );
+            }
+          } else {
+            console.log(`❌ Area range "${areaParam}" not found`);
+          }
+        } catch (error) {
+          console.error("Error converting area filter:", error);
+        }
       }
 
       // Filter by location text (fallback if no location codes provided)
@@ -46,20 +253,198 @@ export class ProjectController {
         filter.fullLocation = { $regex: req.query.location, $options: "i" };
       }
 
-      // Search by name or description
+      // Search by name, description, address, or location (diacritic-insensitive and smart location matching)
       if (req.query.search) {
-        filter.$text = { $search: req.query.search };
+        // Normalize search text (remove diacritics)
+        const normalizeForSearch = (text: string): string => {
+          return text
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/đ/g, "d")
+            .replace(/Đ/g, "D")
+            .toLowerCase()
+            .trim();
+        };
+
+        const originalSearch = req.query.search as string;
+        const normalizedSearch = normalizeForSearch(originalSearch);
+
+        console.log(
+          "🔍 Search query:",
+          originalSearch,
+          "-> normalized:",
+          normalizedSearch
+        );
+
+        // Create search conditions using MongoDB aggregation with text normalization
+        const searchConditions: any[] = [];
+
+        // Tạo regex pattern cho cả text có dấu và không dấu
+        const createSearchPattern = (term: string): string => {
+          // Tạo pattern cho phép match cả có dấu và không dấu
+          return term
+            .replace(/a/g, "[aàáạảãâầấậẩẫăằắặẳẵ]")
+            .replace(/e/g, "[eèéẹẻẽêềếệểễ]")
+            .replace(/i/g, "[iìíịỉĩ]")
+            .replace(/o/g, "[oòóọỏõôồốộổỗơờớợởỡ]")
+            .replace(/u/g, "[uùúụủũưừứựửữ]")
+            .replace(/y/g, "[yỳýỵỷỹ]")
+            .replace(/d/g, "[dđ]")
+            .replace(/A/g, "[AÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴ]")
+            .replace(/E/g, "[EÈÉẸẺẼÊỀẾỆỂỄ]")
+            .replace(/I/g, "[IÌÍỊỈĨ]")
+            .replace(/O/g, "[OÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠ]")
+            .replace(/U/g, "[UÙÚỤỦŨƯỪỨỰỬỮ]")
+            .replace(/Y/g, "[YỲÝỴỶỸ]")
+            .replace(/D/g, "[DĐ]");
+        };
+
+        const flexiblePattern = createSearchPattern(normalizedSearch);
+
+        // Search trong các field với pattern linh hoạt
+        searchConditions.push(
+          // Search trong tên dự án
+          { name: { $regex: flexiblePattern, $options: "i" } },
+          // Search trong description
+          { description: { $regex: flexiblePattern, $options: "i" } },
+          // Search trong address
+          { address: { $regex: flexiblePattern, $options: "i" } },
+          // Search trong fullLocation
+          { fullLocation: { $regex: flexiblePattern, $options: "i" } }
+        );
+
+        // Smart location matching - if search term looks like a location name, try to match province/ward
+        try {
+          const { ProvinceModel, WardModel } = await import(
+            "../models/Location"
+          );
+
+          // Check if search matches any province name (with or without diacritics)
+          const matchingProvinces = await ProvinceModel.find({
+            $or: [
+              { name: { $regex: originalSearch, $options: "i" } },
+              { name: { $regex: normalizedSearch, $options: "i" } },
+              {
+                slug: {
+                  $regex: normalizedSearch.replace(/\s+/g, "-"),
+                  $options: "i",
+                },
+              },
+            ],
+          });
+
+          if (matchingProvinces.length > 0) {
+            console.log(
+              "🏙️ Found matching provinces:",
+              matchingProvinces.map((p) => p.name)
+            );
+            // Add province code conditions
+            matchingProvinces.forEach((province) => {
+              searchConditions.push({ "location.provinceCode": province.code });
+            });
+          }
+
+          // Check if search matches any ward name (with or without diacritics)
+          const matchingWards = await WardModel.find({
+            $or: [
+              { name: { $regex: originalSearch, $options: "i" } },
+              { name: { $regex: normalizedSearch, $options: "i" } },
+              {
+                slug: {
+                  $regex: normalizedSearch.replace(/\s+/g, "-"),
+                  $options: "i",
+                },
+              },
+            ],
+          }).limit(20); // Limit to prevent too many results
+
+          if (matchingWards.length > 0) {
+            console.log(
+              "🏘️ Found matching wards:",
+              matchingWards.map((w) => w.name)
+            );
+            // Add ward code conditions
+            matchingWards.forEach((ward) => {
+              searchConditions.push({ "location.wardCode": ward.code });
+            });
+          }
+        } catch (error) {
+          console.error("Error in smart location matching:", error);
+        }
+
+        filter.$or = searchConditions;
+        console.log("🔍 Total search conditions:", searchConditions.length);
       }
+
+      // Build sort object
+      const sortBy = (req.query.sortBy as string) || "newest";
+      let sortObject: any = {};
+
+      switch (sortBy) {
+        case "newest":
+          sortObject = { createdAt: -1 };
+          break;
+        case "updated":
+          sortObject = { updatedAt: -1 };
+          break;
+        case "price-high":
+          // Sort by priceRange string (for now, until we have numeric price)
+          sortObject = { priceRange: -1, createdAt: -1 };
+          break;
+        case "price-low":
+          sortObject = { priceRange: 1, createdAt: -1 };
+          break;
+        case "area-large":
+          // Sort by area string (for now, until we have numeric area)
+          sortObject = { area: -1, createdAt: -1 };
+          break;
+        case "area-small":
+          sortObject = { area: 1, createdAt: -1 };
+          break;
+        case "name-asc":
+          sortObject = { name: 1 };
+          break;
+        case "name-desc":
+          sortObject = { name: -1 };
+          break;
+        default:
+          sortObject = { createdAt: -1 };
+      }
+
+      console.log("🔀 Sort applied:", sortBy, "->", JSON.stringify(sortObject));
+
+      console.log("🔍 Final filter applied:", JSON.stringify(filter, null, 2));
+
+      // Debug: Show all unique priceRange values in database
+      const allPriceRanges = await Project.distinct("priceRange");
+      console.log(
+        "🏷️ All priceRange values in DB:",
+        allPriceRanges.filter((p) => p)
+      );
+
+      // Debug: Show all unique area values in database
+      const allAreas = await Project.distinct("area");
+      console.log(
+        "📐 All area values in DB:",
+        allAreas.filter((a) => a)
+      );
 
       // Count total projects
       const totalProjects = await Project.countDocuments(filter);
+      console.log("📊 Total projects found:", totalProjects);
 
       // Get projects with pagination
       const projects = await Project.find(filter)
         .select("-__v")
-        .sort({ createdAt: -1 })
+        .populate("developer", "name logo contact")
+        .sort(sortObject)
         .skip(skip)
         .limit(limit);
+
+      console.log("📋 Projects returned:", projects.length);
+      if (projects.length > 0) {
+        console.log("📋 Sample project priceRange:", projects[0].priceRange);
+      }
 
       res.json({
         success: true,
@@ -82,11 +467,45 @@ export class ProjectController {
     }
   }
 
+  // Get featured projects (public access)
+  async getFeaturedProjects(req: Request, res: Response) {
+    try {
+      const limit = parseInt(req.query.limit as string) || 8;
+
+      console.log("🌟 Getting featured projects with limit:", limit);
+
+      // Get featured projects, sorted by creation date (newest first)
+      const projects = await Project.find({ isFeatured: true })
+        .select("-__v")
+        .populate("developer", "name logo contact")
+        .sort({ createdAt: -1 })
+        .limit(limit);
+
+      console.log("🌟 Found", projects.length, "featured projects");
+
+      res.json({
+        success: true,
+        data: {
+          projects,
+          total: projects.length,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching featured projects:", error);
+      res.status(500).json({
+        success: false,
+        message: "Có lỗi xảy ra khi lấy danh sách dự án nổi bật",
+      });
+    }
+  }
+
   // Get project by ID (public access)
   async getProjectById(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const project = await Project.findById(id).select("-__v");
+      const project = await Project.findById(id)
+        .select("-__v")
+        .populate("developer", "name logo contact");
 
       if (!project) {
         return res.status(404).json({
@@ -112,7 +531,9 @@ export class ProjectController {
   async getProjectBySlug(req: Request, res: Response) {
     try {
       const { slug } = req.params;
-      const project = await Project.findOne({ slug }).select("-__v");
+      const project = await Project.findOne({ slug })
+        .select("-__v")
+        .populate("developer", "name logo contact");
 
       if (!project) {
         return res.status(404).json({
@@ -151,9 +572,27 @@ export class ProjectController {
         filter.status = req.query.status;
       }
 
-      // Search by name or description
+      // Search by name, description, address, or location (diacritic-insensitive)
       if (req.query.search) {
-        filter.$text = { $search: req.query.search };
+        // Normalize search text (remove diacritics)
+        const normalizeForSearch = (text: string): string => {
+          return text
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/đ/g, "d")
+            .replace(/Đ/g, "D")
+            .toLowerCase()
+            .trim();
+        };
+
+        const normalizedSearch = normalizeForSearch(req.query.search as string);
+
+        filter.$or = [
+          { name: { $regex: normalizedSearch, $options: "i" } },
+          { description: { $regex: normalizedSearch, $options: "i" } },
+          { address: { $regex: normalizedSearch, $options: "i" } },
+          { fullLocation: { $regex: normalizedSearch, $options: "i" } },
+        ];
       }
 
       // Count total projects
@@ -162,7 +601,7 @@ export class ProjectController {
       // Get projects with pagination
       const projects = await Project.find(filter)
         .select(
-          "_id name slug address location developer status totalUnits area priceRange createdAt updatedAt"
+          "_id name slug address location developer status totalUnits area priceRange isFeatured createdAt updatedAt"
         )
         .populate("developer", "name logo")
         .sort({ createdAt: -1 })

@@ -682,4 +682,48 @@ export class AuthController {
       });
     }
   }
+
+  // Get public user info
+  async getUserPublicInfo(req: Request, res: Response) {
+    try {
+      const { userId } = req.params;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: "User ID is required",
+        });
+      }
+
+      // Find user with public info only
+      const user = await User.findById(userId).select(
+        "username email phoneNumber createdAt avatar"
+      );
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        user: {
+          _id: user._id,
+          username: user.username,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          createdAt: user.createdAt,
+          avatar: user.avatar,
+        },
+      });
+    } catch (error) {
+      console.error("Get user public info error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
 }

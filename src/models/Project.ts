@@ -68,6 +68,7 @@ export interface IProject extends Document {
   faqs: IProjectFAQ[];
   contact: IProjectContact;
   map: IProjectMap;
+  isFeatured: boolean; // Dự án nổi bật
   createdAt: Date;
   updatedAt: Date;
 }
@@ -241,6 +242,11 @@ const ProjectSchema = new Schema<IProject>(
       type: ProjectMapSchema,
       required: true,
     },
+    isFeatured: {
+      type: Boolean,
+      default: false,
+      index: true, // Index for better query performance
+    },
   },
   {
     timestamps: true,
@@ -255,6 +261,7 @@ ProjectSchema.index({
   address: "text",
 });
 ProjectSchema.index({ status: 1 });
+ProjectSchema.index({ isFeatured: 1 });
 ProjectSchema.index({ "developer.name": 1 });
 ProjectSchema.index({ createdAt: -1 });
 ProjectSchema.index({ "location.provinceCode": 1 });
@@ -262,6 +269,10 @@ ProjectSchema.index({ "location.wardCode": 1 });
 ProjectSchema.index({
   "location.provinceCode": 1,
   "location.wardCode": 1,
+});
+ProjectSchema.index({
+  isFeatured: -1,
+  createdAt: -1,
 });
 
 export const Project = mongoose.model<IProject>("Project", ProjectSchema);

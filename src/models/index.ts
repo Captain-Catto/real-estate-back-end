@@ -18,3 +18,5 @@ export {
 export { News, INews } from "./News";
 export { NewsCategory, INewsCategory } from "./NewsCategory";
 export { HeaderMenu, IHeaderMenu, IDropdownItem } from "./HeaderMenu";
+export { default as ContactLog, IContactLog } from "./ContactLog";
+export { ContactMessage, IContactMessage } from "./ContactMessage";
