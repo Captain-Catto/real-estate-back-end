@@ -66,6 +66,5 @@ export { ProjectController } from "./ProjectController";
 export { UploadController } from "./UploadController";
 export { NotificationController } from "./NotificationController";
 export { PackageController } from "./PackageController";
-export { SidebarConfigController } from "./SidebarConfigController";
 export { NewsController } from "./NewsController";
 export { HeaderSettingsController } from "./HeaderSettingsController";

@@ -1,440 +1,450 @@
 import { Request, Response } from "express";
-import { SidebarConfig, ISidebarMenuItem } from "../models/SidebarConfig";
-import { AuthenticatedRequest } from "../middleware";
+import SidebarConfig, { IMenuItem } from "../models/SidebarConfig";
 
-// Default sidebar menu items
-const defaultAdminMenuItems: ISidebarMenuItem[] = [
-  {
-    id: "overview",
-    name: "Tổng quan",
-    href: "/admin",
-    icon: "HomeIcon",
-    order: 1,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "manage-posts",
-    name: "Quản lý tin đăng",
-    href: "/admin/quan-ly-tin-dang",
-    icon: "DocumentTextIcon",
-    order: 2,
-    isVisible: true,
-    roles: ["admin", "employee"],
-  },
-  {
-    id: "manage-users",
-    name: "Quản lý người dùng",
-    href: "/admin/quan-ly-nguoi-dung",
-    icon: "UserGroupIcon",
-    order: 3,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "manage-news",
-    name: "Tin tức",
-    href: "/admin/quan-ly-tin-tuc",
-    icon: "NewspaperIcon",
-    order: 4,
-    isVisible: true,
-    roles: ["admin", "employee"],
-  },
-  {
-    id: "manage-transactions",
-    name: "Giao dịch",
-    href: "/admin/quan-ly-giao-dich",
-    icon: "CurrencyDollarIcon",
-    order: 5,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "statistics",
-    name: "Thống kê",
-    href: "/admin/thong-ke",
-    icon: "ChartBarIcon",
-    order: 6,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "manage-locations",
-    name: "Quản lý địa chính",
-    href: "/admin/quan-ly-dia-chinh",
-    icon: "MapIcon",
-    order: 7,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "manage-projects",
-    name: "Quản lý dự án",
-    href: "/admin/quan-ly-du-an",
-    icon: "BuildingOfficeIcon",
-    order: 8,
-    isVisible: true,
-    roles: ["admin", "employee"],
-  },
-  {
-    id: "manage-developers",
-    name: "Quản lý chủ đầu tư",
-    href: "/admin/quan-ly-chu-dau-tu",
-    icon: "UserGroupIcon",
-    order: 9,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "manage-categories",
-    name: "Quản lý danh mục",
-    href: "/admin/quan-ly-danh-muc",
-    icon: "DocumentTextIcon",
-    order: 10,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "manage-areas",
-    name: "Quản lý diện tích",
-    href: "/admin/quan-ly-dien-tich",
-    icon: "DocumentTextIcon",
-    order: 11,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "manage-prices",
-    name: "Quản lý giá",
-    href: "/admin/quan-ly-gia",
-    icon: "DocumentTextIcon",
-    order: 12,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "settings",
-    name: "Cài đặt",
-    href: "/admin/cai-dat",
-    icon: "CogIcon",
-    order: 13,
-    isVisible: true,
-    roles: ["admin"],
-  },
-  {
-    id: "sidebar-config",
-    name: "Cấu hình Sidebar",
-    href: "/admin/cau-hinh-sidebar",
-    icon: "CogIcon",
-    order: 14,
-    isVisible: true,
-    roles: ["admin"],
-  },
-];
-
-const defaultEmployeeMenuItems: ISidebarMenuItem[] = [
-  {
-    id: "overview",
-    name: "Tổng quan",
-    href: "/employee",
-    icon: "HomeIcon",
-    order: 1,
-    isVisible: true,
-    roles: ["employee"],
-  },
-  {
-    id: "manage-posts",
-    name: "Quản lý tin đăng",
-    href: "/employee/quan-ly-tin-dang",
-    icon: "DocumentTextIcon",
-    order: 2,
-    isVisible: true,
-    roles: ["employee"],
-  },
-  {
-    id: "manage-news",
-    name: "Tin tức",
-    href: "/employee/quan-ly-tin-tuc",
-    icon: "NewspaperIcon",
-    order: 3,
-    isVisible: true,
-    roles: ["employee"],
-  },
-  {
-    id: "contact-management",
-    name: "Quản lý liên hệ",
-    href: "/employee/quan-ly-lien-he",
-    icon: "PhoneIcon",
-    order: 3.5,
-    isVisible: true,
-    roles: ["employee"],
-  },
-  {
-    id: "manage-projects",
-    name: "Quản lý dự án",
-    href: "/employee/quan-ly-du-an",
-    icon: "BuildingOfficeIcon",
-    order: 4,
-    isVisible: true,
-    roles: ["employee"],
-  },
-];
-
+/**
+ * SidebarConfigController
+ *
+ * Controller xử lý các API endpoints liên quan đến cấu hình sidebar
+ */
 export class SidebarConfigController {
-  // GET /api/admin/sidebar-config - Lấy cấu hình sidebar
-  async getSidebarConfig(req: AuthenticatedRequest, res: Response) {
+  /**
+   * Lấy cấu hình sidebar cho người dùng hiện tại dựa theo role
+   * GET /api/sidebar-config
+   */
+  static async getSidebarConfig(req: Request, res: Response) {
     try {
-      const userId = req.user?.userId;
-      const userRole = req.user?.role;
+      const user = (req as any).user;
 
-      if (!userId || !userRole) {
+      if (!user) {
         return res.status(401).json({
           success: false,
-          message: "Unauthorized",
+          message: "Người dùng chưa đăng nhập",
         });
       }
 
-      // Tìm cấu hình cá nhân của user trước
-      let config = await SidebarConfig.findOne({
-        userId: userId,
-        role: userRole,
-      });
+      // Lấy role từ query parameter nếu người dùng là admin (để preview sidebar theo role khác)
+      const requestedRole = req.query.role as string | undefined;
 
-      // Nếu không có cấu hình cá nhân, tìm cấu hình mặc định cho role
-      if (!config) {
-        config = await SidebarConfig.findOne({
-          isDefault: true,
-          role: userRole,
-        });
-      }
+      // Xác định role cuối cùng để lấy menu
+      // Nếu là admin và có yêu cầu xem role khác, dùng role được yêu cầu
+      // Ngược lại, dùng role hiện tại của user
+      const effectiveRole =
+        user.role === "admin" && requestedRole ? requestedRole : user.role;
 
-      // Nếu vẫn không có, tạo cấu hình mặc định
-      if (!config) {
-        const defaultItems =
-          userRole === "admin"
-            ? defaultAdminMenuItems
-            : defaultEmployeeMenuItems;
+      // Đảm bảo có cấu hình mặc định
+      await SidebarConfig.createDefaultConfig();
 
-        config = new SidebarConfig({
-          userId: null, // Default config
-          menuItems: defaultItems,
-          isDefault: true,
-          role: userRole,
-        });
+      // Lấy menu items cho role hiện tại
+      const menuItems = await SidebarConfig.getMenuForRole(effectiveRole);
 
-        await config.save();
-      }
-
-      res.json({
+      return res.json({
         success: true,
         data: {
-          menuItems: config.menuItems,
-          role: config.role,
-          isDefault: config.isDefault,
+          items: menuItems,
+          role: effectiveRole,
         },
+        message: "Lấy cấu hình sidebar thành công",
       });
     } catch (error) {
-      console.error("Error fetching sidebar config:", error);
+      console.error("Lỗi khi lấy cấu hình sidebar:", error);
       res.status(500).json({
         success: false,
-        message: "Internal server error",
+        message: "Lỗi server",
       });
     }
   }
 
-  // PUT /api/admin/sidebar-config - Cập nhật cấu hình sidebar
-  async updateSidebarConfig(req: AuthenticatedRequest, res: Response) {
+  /**
+   * Lấy toàn bộ menu items (chỉ dành cho admin)
+   * GET /api/admin/sidebar-config/items
+   */
+  static async getAllMenuItems(req: Request, res: Response) {
     try {
-      const userId = req.user?.userId;
-      const userRole = req.user?.role;
-      const { menuItems } = req.body;
+      const user = (req as any).user;
 
-      if (!userId || !userRole) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-      }
-
-      if (!menuItems || !Array.isArray(menuItems)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid menu items data",
-        });
-      }
-
-      // Validate menu items structure
-      for (const item of menuItems) {
-        if (!item.id || !item.name || !item.href || !item.icon) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid menu item structure",
-          });
-        }
-      }
-
-      // Tìm cấu hình hiện tại của user
-      let config = await SidebarConfig.findOne({
-        userId: userId,
-        role: userRole,
-      });
-
-      if (config) {
-        // Cập nhật cấu hình hiện tại
-        config.menuItems = menuItems;
-        config.isDefault = false; // Đánh dấu là cấu hình cá nhân
-        await config.save();
-      } else {
-        // Tạo cấu hình mới cho user
-        config = new SidebarConfig({
-          userId: userId,
-          menuItems: menuItems,
-          isDefault: false,
-          role: userRole,
-        });
-        await config.save();
-      }
-
-      res.json({
-        success: true,
-        message: "Sidebar configuration updated successfully",
-        data: {
-          menuItems: config.menuItems,
-          role: config.role,
-          isDefault: config.isDefault,
-        },
-      });
-    } catch (error) {
-      console.error("Error updating sidebar config:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  }
-
-  // POST /api/admin/sidebar-config/reset - Reset về cấu hình mặc định
-  async resetSidebarConfig(req: AuthenticatedRequest, res: Response) {
-    try {
-      const userId = req.user?.userId;
-      const userRole = req.user?.role;
-
-      if (!userId || !userRole) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-      }
-
-      // Xóa cấu hình cá nhân của user
-      await SidebarConfig.deleteOne({
-        userId: userId,
-        role: userRole,
-      });
-
-      // Trả về cấu hình mặc định
-      const defaultItems =
-        userRole === "admin" ? defaultAdminMenuItems : defaultEmployeeMenuItems;
-
-      res.json({
-        success: true,
-        message: "Sidebar configuration reset to default",
-        data: {
-          menuItems: defaultItems,
-          role: userRole,
-          isDefault: true,
-        },
-      });
-    } catch (error) {
-      console.error("Error resetting sidebar config:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  }
-
-  // GET /api/admin/sidebar-config/default - Lấy cấu hình mặc định
-  async getDefaultSidebarConfig(req: AuthenticatedRequest, res: Response) {
-    try {
-      const userRole = req.user?.role;
-
-      if (!userRole) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-      }
-
-      const defaultItems =
-        userRole === "admin" ? defaultAdminMenuItems : defaultEmployeeMenuItems;
-
-      res.json({
-        success: true,
-        data: {
-          menuItems: defaultItems,
-          role: userRole,
-          isDefault: true,
-        },
-      });
-    } catch (error) {
-      console.error("Error fetching default sidebar config:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  }
-
-  // POST /api/admin/sidebar-config/create-default - Tạo cấu hình mặc định (admin only)
-  async createDefaultSidebarConfig(req: AuthenticatedRequest, res: Response) {
-    try {
-      const userRole = req.user?.role;
-
-      if (userRole !== "admin") {
+      if (!user || user.role !== "admin") {
         return res.status(403).json({
           success: false,
-          message: "Access denied. Admin only.",
+          message: "Bạn không có quyền thực hiện hành động này",
         });
       }
 
-      // Tạo cấu hình mặc định cho admin
-      const adminConfig = await SidebarConfig.findOneAndUpdate(
-        { isDefault: true, role: "admin" },
-        {
-          userId: null,
-          menuItems: defaultAdminMenuItems,
-          isDefault: true,
-          role: "admin",
-        },
-        { upsert: true, new: true }
-      );
+      // Đảm bảo có cấu hình mặc định
+      await SidebarConfig.createDefaultConfig();
 
-      // Tạo cấu hình mặc định cho employee
-      const employeeConfig = await SidebarConfig.findOneAndUpdate(
-        { isDefault: true, role: "employee" },
-        {
-          userId: null,
-          menuItems: defaultEmployeeMenuItems,
-          isDefault: true,
-          role: "employee",
-        },
-        { upsert: true, new: true }
-      );
+      // Lấy cấu hình mặc định
+      const defaultConfig = await SidebarConfig.findOne({ isDefault: true });
 
-      res.json({
+      if (!defaultConfig) {
+        return res.status(500).json({
+          success: false,
+          message: "Không tìm thấy cấu hình sidebar",
+        });
+      }
+
+      return res.json({
         success: true,
-        message: "Default sidebar configurations created successfully",
         data: {
-          admin: adminConfig,
-          employee: employeeConfig,
+          items: defaultConfig.items,
         },
+        message: "Lấy danh sách menu items thành công",
       });
     } catch (error) {
-      console.error("Error creating default sidebar config:", error);
+      console.error("Lỗi khi lấy danh sách menu items:", error);
       res.status(500).json({
         success: false,
-        message: "Internal server error",
+        message: "Lỗi server",
+      });
+    }
+  }
+
+  /**
+   * Cập nhật trạng thái hiển thị của menu item
+   * PUT /api/admin/sidebar-config/item/:id/visibility
+   */
+  static async updateMenuItemVisibility(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      const { id } = req.params;
+      const { isVisible } = req.body;
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền thực hiện hành động này",
+        });
+      }
+
+      if (typeof isVisible !== "boolean") {
+        return res.status(400).json({
+          success: false,
+          message: "isVisible phải là kiểu boolean",
+        });
+      }
+
+      // Lấy cấu hình mặc định
+      const defaultConfig = await SidebarConfig.findOne({ isDefault: true });
+
+      if (!defaultConfig) {
+        return res.status(500).json({
+          success: false,
+          message: "Không tìm thấy cấu hình sidebar",
+        });
+      }
+
+      // Tìm và cập nhật menu item
+      const itemIndex = defaultConfig.items.findIndex((item) => item.id === id);
+
+      if (itemIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy menu item",
+        });
+      }
+
+      // Cập nhật trạng thái hiển thị
+      defaultConfig.items[itemIndex].isVisible = isVisible;
+      await defaultConfig.save();
+
+      return res.json({
+        success: true,
+        message: `Đã ${isVisible ? "hiện" : "ẩn"} menu item thành công`,
+      });
+    } catch (error) {
+      console.error("Lỗi khi cập nhật trạng thái hiển thị:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server",
+      });
+    }
+  }
+
+  /**
+   * Cập nhật quyền truy cập của menu item
+   * PUT /api/admin/sidebar-config/item/:id/roles
+   */
+  static async updateMenuItemRoles(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      const { id } = req.params;
+      const { allowedRoles } = req.body;
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền thực hiện hành động này",
+        });
+      }
+
+      if (!Array.isArray(allowedRoles)) {
+        return res.status(400).json({
+          success: false,
+          message: "allowedRoles phải là mảng các roles",
+        });
+      }
+
+      // Lấy cấu hình mặc định
+      const defaultConfig = await SidebarConfig.findOne({ isDefault: true });
+
+      if (!defaultConfig) {
+        return res.status(500).json({
+          success: false,
+          message: "Không tìm thấy cấu hình sidebar",
+        });
+      }
+
+      // Tìm và cập nhật menu item
+      const itemIndex = defaultConfig.items.findIndex((item) => item.id === id);
+
+      if (itemIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy menu item",
+        });
+      }
+
+      // Cập nhật quyền truy cập
+      defaultConfig.items[itemIndex].allowedRoles = allowedRoles;
+      await defaultConfig.save();
+
+      return res.json({
+        success: true,
+        message: "Đã cập nhật quyền truy cập thành công",
+      });
+    } catch (error) {
+      console.error("Lỗi khi cập nhật quyền truy cập:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server",
+      });
+    }
+  }
+
+  /**
+   * Thêm menu item mới
+   * POST /api/admin/sidebar-config/item
+   */
+  static async addMenuItem(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      const { title, path, order, parentId, allowedRoles, metadata } = req.body;
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền thực hiện hành động này",
+        });
+      }
+
+      // Kiểm tra dữ liệu đầu vào
+      if (!title || !path) {
+        return res.status(400).json({
+          success: false,
+          message: "Thiếu thông tin bắt buộc: title, path",
+        });
+      }
+
+      // Lấy cấu hình mặc định
+      const defaultConfig = await SidebarConfig.findOne({ isDefault: true });
+
+      if (!defaultConfig) {
+        return res.status(500).json({
+          success: false,
+          message: "Không tìm thấy cấu hình sidebar",
+        });
+      }
+
+      // Tạo ID mới dựa trên title (slug)
+      const id = title.toLowerCase().replace(/\s+/g, "-");
+
+      // Kiểm tra ID đã tồn tại chưa
+      const existingItem = defaultConfig.items.find((item) => item.id === id);
+      if (existingItem) {
+        return res.status(400).json({
+          success: false,
+          message: "Menu item với ID này đã tồn tại",
+        });
+      }
+
+      // Tạo menu item mới
+      const newItem: IMenuItem = {
+        id,
+        title,
+        path,
+        order: order || defaultConfig.items.length,
+        isVisible: true,
+        allowedRoles: allowedRoles || ["admin"],
+        parentId,
+        metadata: metadata || {},
+      };
+
+      // Thêm vào cấu hình
+      defaultConfig.items.push(newItem);
+      await defaultConfig.save();
+
+      return res.status(201).json({
+        success: true,
+        data: {
+          item: newItem,
+        },
+        message: "Thêm menu item mới thành công",
+      });
+    } catch (error) {
+      console.error("Lỗi khi thêm menu item:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server",
+      });
+    }
+  }
+
+  /**
+   * Xóa menu item
+   * DELETE /api/admin/sidebar-config/item/:id
+   */
+  static async deleteMenuItem(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      const { id } = req.params;
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền thực hiện hành động này",
+        });
+      }
+
+      // Lấy cấu hình mặc định
+      const defaultConfig = await SidebarConfig.findOne({ isDefault: true });
+
+      if (!defaultConfig) {
+        return res.status(500).json({
+          success: false,
+          message: "Không tìm thấy cấu hình sidebar",
+        });
+      }
+
+      // Tìm menu item cần xóa
+      const itemIndex = defaultConfig.items.findIndex((item) => item.id === id);
+
+      if (itemIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy menu item",
+        });
+      }
+
+      // Xóa menu item
+      defaultConfig.items.splice(itemIndex, 1);
+      await defaultConfig.save();
+
+      return res.json({
+        success: true,
+        message: "Đã xóa menu item thành công",
+      });
+    } catch (error) {
+      console.error("Lỗi khi xóa menu item:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server",
+      });
+    }
+  }
+
+  /**
+   * Reset cấu hình sidebar về mặc định
+   * POST /api/admin/sidebar-config/reset
+   */
+  static async resetSidebarConfig(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền thực hiện hành động này",
+        });
+      }
+
+      // Xóa cấu hình hiện tại
+      await SidebarConfig.deleteMany({ isDefault: true });
+
+      // Tạo lại cấu hình mặc định
+      const newConfig = await SidebarConfig.createDefaultConfig();
+
+      return res.json({
+        success: true,
+        data: {
+          config: newConfig,
+        },
+        message: "Đã reset cấu hình sidebar về mặc định",
+      });
+    } catch (error) {
+      console.error("Lỗi khi reset cấu hình sidebar:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server",
+      });
+    }
+  }
+
+  /**
+   * Cập nhật thứ tự hiển thị của menu item
+   * PUT /api/admin/sidebar-config/item/:id/order
+   */
+  static async updateMenuItemOrder(req: Request, res: Response) {
+    try {
+      const user = (req as any).user;
+      const { id } = req.params;
+      const { order } = req.body;
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền thực hiện hành động này",
+        });
+      }
+
+      if (typeof order !== "number") {
+        return res.status(400).json({
+          success: false,
+          message: "order phải là số",
+        });
+      }
+
+      // Lấy cấu hình mặc định
+      const defaultConfig = await SidebarConfig.findOne({ isDefault: true });
+
+      if (!defaultConfig) {
+        return res.status(500).json({
+          success: false,
+          message: "Không tìm thấy cấu hình sidebar",
+        });
+      }
+
+      // Tìm và cập nhật menu item
+      const itemIndex = defaultConfig.items.findIndex((item) => item.id === id);
+
+      if (itemIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy menu item",
+        });
+      }
+
+      // Cập nhật thứ tự
+      defaultConfig.items[itemIndex].order = order;
+      await defaultConfig.save();
+
+      return res.json({
+        success: true,
+        message: "Đã cập nhật thứ tự hiển thị thành công",
+      });
+    } catch (error) {
+      console.error("Lỗi khi cập nhật thứ tự hiển thị:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server",
       });
     }
   }

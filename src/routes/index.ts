@@ -2,6 +2,7 @@ import { Router, Express } from "express";
 import { authenticateUser, authenticateAdmin } from "../middleware";
 import { uploadS3 } from "../utils/s3Upload";
 import paymentSchedulerRoutes from "./paymentSchedulerRoutes";
+import sidebarRoutes from "./sidebarRoutes";
 import {
   IndexController,
   AuthController,
@@ -17,7 +18,6 @@ import {
   AdminController, // Add admin controller
   ProjectController, // Add project controller
   PackageController, // Add package controller
-  SidebarConfigController, // Add sidebar config controller
   NewsController, // Add news controller
   HeaderSettingsController, // Add header settings controller
 } from "../controllers";
@@ -43,7 +43,6 @@ const projectController = new ProjectController(); // New project controller ins
 const developerController = new DeveloperController(); // New developer controller instance
 const uploadController = new UploadController(); // New upload controller instance
 const packageController = new PackageController(); // New package controller instance
-const sidebarConfigController = new SidebarConfigController(); // New sidebar config controller instance
 
 export function setRoutes(app: Express) {
   // Trang chủ
@@ -853,37 +852,6 @@ export function setRoutes(app: Express) {
     packageController.deletePackage.bind(packageController)
   );
 
-  // Sidebar Configuration Routes
-  adminRouter.get(
-    "/sidebar-config",
-    authenticateUser,
-    sidebarConfigController.getSidebarConfig.bind(sidebarConfigController)
-  );
-  adminRouter.put(
-    "/sidebar-config",
-    authenticateUser,
-    sidebarConfigController.updateSidebarConfig.bind(sidebarConfigController)
-  );
-  adminRouter.post(
-    "/sidebar-config/reset",
-    authenticateUser,
-    sidebarConfigController.resetSidebarConfig.bind(sidebarConfigController)
-  );
-  adminRouter.get(
-    "/sidebar-config/default",
-    authenticateUser,
-    sidebarConfigController.getDefaultSidebarConfig.bind(
-      sidebarConfigController
-    )
-  );
-  adminRouter.post(
-    "/sidebar-config/create-default",
-    authenticateAdmin,
-    sidebarConfigController.createDefaultSidebarConfig.bind(
-      sidebarConfigController
-    )
-  );
-
   // Header Settings Routes
   adminRouter.get(
     "/header-settings",
@@ -1031,6 +999,9 @@ export function setRoutes(app: Express) {
 
   // Payment Scheduler Routes (Admin only)
   app.use("/api/admin/payment-scheduler", paymentSchedulerRoutes);
+
+  // Sidebar Configuration Routes
+  app.use("/api/sidebar", sidebarRoutes);
 
   // ===== CONTACT ROUTES =====
   const contactRouter = Router();

@@ -11,6 +11,7 @@
     "import-locations": "ts-node src/scripts/importLocations.ts",
     "seed-categories": "ts-node scripts/seedCategories.ts",
     "seed-packages": "ts-node scripts/seedPackages.ts",
+    "seed-sidebar": "ts-node scripts/seedSidebarConfig.ts",
     "check-packages": "ts-node scripts/checkPackages.ts",
     "test-package-api": "ts-node scripts/testPackageAPI.ts",
     "test-update-package": "ts-node scripts/testUpdatePackage.ts",
