@@ -5,7 +5,10 @@
   "scripts": {
     "populate": "node scripts/populate-sidebar-config.js",
     "populate:dev": "NODE_ENV=development node scripts/populate-sidebar-config.js",
-    "populate:prod": "NODE_ENV=production node scripts/populate-sidebar-config.js"
+    "populate:prod": "NODE_ENV=production node scripts/populate-sidebar-config.js",
+    "update-permissions": "ts-node update-sidebar-permissions.ts",
+    "update-role-permissions": "ts-node update-sidebar-role-permissions.ts",
+    "list-configs": "ts-node list-sidebar-configs.ts"
   },
   "dependencies": {
     "mongodb": "^6.0.0",

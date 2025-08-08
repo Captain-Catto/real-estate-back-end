@@ -446,11 +446,16 @@ export class NewsController {
         });
       }
 
-      // Check if user is author or admin
-      if (
-        req.user?.role !== "admin" &&
-        news.author._id.toString() !== req.user?.userId.toString()
-      ) {
+      // Since this route already has requirePermission("edit_news") middleware,
+      // the user either has edit_news permission or is admin
+      // Only check authorship for regular users without edit permissions
+      const isAdmin = req.user?.role === "admin";
+      const isEmployee = req.user?.role === "employee";
+      const isAuthor =
+        news.author._id.toString() === req.user?.userId.toString();
+
+      // If not admin or employee, must be the author
+      if (!isAdmin && !isEmployee && !isAuthor) {
         return res.status(403).json({
           success: false,
           message: "You are not authorized to view this news article",
@@ -523,13 +528,37 @@ export class NewsController {
       if (featuredImage !== undefined) news.featuredImage = featuredImage;
       if (category !== undefined) news.category = category;
 
-      // Only admin can change hot/featured status
-      if (req.user?.role === "admin") {
-        if (isHot !== undefined) news.isHot = isHot;
-        if (isFeatured !== undefined) news.isFeatured = isFeatured;
+      // Check permissions for changing hot/featured status
+      if (isHot !== undefined || isFeatured !== undefined) {
+        if (req.user?.role === "admin") {
+          // Admin can always change
+          if (isHot !== undefined) news.isHot = isHot;
+          if (isFeatured !== undefined) news.isFeatured = isFeatured;
+        } else if (req.user?.role === "employee") {
+          // Check if employee has feature_news permission
+          const { UserPermission } = require("../models");
+          const userPermission = await UserPermission.findOne({
+            userId: req.user.userId,
+          });
+
+          if (userPermission?.permissions.includes("feature_news")) {
+            if (isHot !== undefined) news.isHot = isHot;
+            if (isFeatured !== undefined) news.isFeatured = isFeatured;
+          } else {
+            return res.status(403).json({
+              success: false,
+              message: "You are not authorized to change featured/hot status",
+            });
+          }
+        } else {
+          return res.status(403).json({
+            success: false,
+            message: "You are not authorized to change featured/hot status",
+          });
+        }
       }
 
-      // Handle status changes based on user role
+      // Handle status changes based on user role and permissions
       if (status !== undefined && news.status !== status) {
         if (req.user?.role === "admin") {
           // Admin can make any status change
@@ -548,13 +577,34 @@ export class NewsController {
           }
           news.status = status;
         } else if (req.user?.role === "employee") {
-          // Employee can only send for approval or save as draft
-          if (status === "published") {
-            news.status = "pending"; // Change to pending, not published
-          } else if (status === "draft" || status === "pending") {
+          // Check employee permissions for publishing
+          const { UserPermission } = require("../models");
+          const userPermission = await UserPermission.findOne({
+            userId: req.user.userId,
+          });
+
+          if (
+            status === "published" &&
+            userPermission?.permissions.includes("publish_news")
+          ) {
+            // Employee with publish permission can publish directly
+            if (!news.publishedAt) {
+              news.publishedAt = new Date();
+              news.moderatedBy = new mongoose.Types.ObjectId(req.user.userId);
+            }
             news.status = status;
+          } else if (status === "published") {
+            // Employee without publish permission sends for approval
+            news.status = "pending";
+          } else if (status === "draft" || status === "pending") {
+            // Employee can always save as draft or send for approval
+            news.status = status;
+          } else {
+            return res.status(403).json({
+              success: false,
+              message: "You are not authorized to change status to " + status,
+            });
           }
-          // Employees cannot unpublish news
         }
       }
 

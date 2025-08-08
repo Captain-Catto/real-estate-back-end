@@ -8,6 +8,7 @@ import mongoose from "mongoose";
 import { AuthenticatedRequest } from "../middleware";
 import { NotificationService } from "../services/NotificationService";
 import { Package } from "../models/Package";
+import UserPermission from "../models/UserPermission";
 
 interface AdminStats {
   totalPosts: number;
@@ -1311,90 +1312,192 @@ export const AdminController = {
       console.log("📄 Post ID:", id);
       console.log("📦 Request body:", JSON.stringify(updates, null, 2));
 
-      // If employee, only allow status changes
+      // If employee, check permissions to determine allowed actions
       if (userRole === "employee") {
-        const allowedFields = ["status"];
-        const requestedFields = Object.keys(updates);
-        const invalidFields = requestedFields.filter(
-          (field) => !allowedFields.includes(field)
-        );
+        // Check if employee has edit_post permission
+        const userPermission = await UserPermission.findOne({
+          userId: currentUserId,
+        });
+        const hasEditPermission =
+          userPermission?.permissions.includes("edit_post");
 
-        if (invalidFields.length > 0) {
-          return res.status(403).json({
-            success: false,
-            message: `Employee chỉ có thể thay đổi trạng thái tin đăng. Các trường không được phép: ${invalidFields.join(
-              ", "
-            )}`,
-          });
-        }
+        console.log("🔍 Employee permission check:", {
+          userId: currentUserId,
+          hasEditPermission,
+          totalPermissions: userPermission?.permissions.length || 0,
+        });
 
-        // Handle status change
-        if (updates.status) {
-          const oldStatus = post.status;
-          post.status = updates.status;
+        if (hasEditPermission) {
+          // Employee with edit_post permission can edit all fields like admin
+          const allowedUpdateKeys = Object.keys(updates).filter(
+            (key) =>
+              key !== "author" &&
+              key !== "createdAt" &&
+              key !== "_id" &&
+              key !== "id"
+          );
 
-          // Add admin/employee info for status changes
-          if (updates.status === "active") {
-            post.approvedAt = new Date();
-            post.approvedBy = new mongoose.Types.ObjectId(currentUserId);
-            post.rejectedAt = undefined;
-            post.rejectedBy = undefined;
-            post.rejectedReason = undefined;
-          } else if (updates.status === "rejected") {
-            post.rejectedAt = new Date();
-            post.rejectedBy = new mongoose.Types.ObjectId(currentUserId);
-            post.rejectedReason = updates.reason || "Không đạt yêu cầu";
-            post.approvedAt = undefined;
-            post.approvedBy = undefined;
-          } else if (updates.status === "pending") {
-            // When restoring from deleted or changing to pending, clear approval/rejection info
-            post.approvedAt = undefined;
-            post.approvedBy = undefined;
-            post.rejectedAt = undefined;
-            post.rejectedBy = undefined;
-            post.rejectedReason = undefined;
+          console.log(
+            "🔑 Allowed update keys for employee with edit permission:",
+            allowedUpdateKeys
+          );
+
+          allowedUpdateKeys.forEach((key) => {
             console.log(
-              `📋 Post ${id} status changed to pending by employee - cleared approval/rejection data`
+              `📝 Updating ${key}: ${(post as any)[key]} → ${updates[key]}`
+            );
+            (post as any)[key] = updates[key];
+          });
+
+          // Handle status changes
+          if (updates.status) {
+            const oldStatus = post.status;
+
+            if (updates.status === "active") {
+              post.approvedAt = new Date();
+              post.approvedBy = new mongoose.Types.ObjectId(currentUserId);
+              post.rejectedAt = undefined;
+              post.rejectedBy = undefined;
+              post.rejectedReason = undefined;
+            } else if (updates.status === "rejected") {
+              post.rejectedAt = new Date();
+              post.rejectedBy = new mongoose.Types.ObjectId(currentUserId);
+              post.rejectedReason = updates.reason || "Không đạt yêu cầu";
+              post.approvedAt = undefined;
+              post.approvedBy = undefined;
+            } else if (updates.status === "pending") {
+              post.approvedAt = undefined;
+              post.approvedBy = undefined;
+              post.rejectedAt = undefined;
+              post.rejectedBy = undefined;
+              post.rejectedReason = undefined;
+              console.log(
+                `📋 Post ${id} status changed to pending by employee - cleared approval/rejection data`
+              );
+            }
+
+            // Send notifications for status changes
+            try {
+              if (updates.status === "active" && oldStatus !== "active") {
+                await NotificationService.createPostApprovedNotification(
+                  post.author.toString(),
+                  post.title.toString(),
+                  post._id.toString()
+                );
+              } else if (
+                updates.status === "rejected" &&
+                oldStatus !== "rejected"
+              ) {
+                await NotificationService.createPostRejectedNotification(
+                  post.author.toString(),
+                  post.title.toString(),
+                  post._id.toString(),
+                  post.rejectedReason?.toString()
+                );
+              } else if (
+                updates.status === "pending" &&
+                oldStatus === "deleted"
+              ) {
+                console.log(
+                  `📨 Post ${id} restored from deleted to pending by employee - notification could be sent here`
+                );
+              }
+            } catch (error) {
+              console.error("❌ Error sending notification:", error);
+              // Don't fail the request for notification error
+            }
+
+            console.log(
+              `✅ Post ${id} status updated from "${oldStatus}" to "${updates.status}" by employee ${currentUserId}`
             );
           }
 
           await post.save();
+          console.log(
+            `✅ Post ${id} updated successfully by employee ${currentUserId} with edit permission`
+          );
+        } else {
+          // Employee without edit_post permission can only change status
+          const allowedFields = ["status"];
+          const requestedFields = Object.keys(updates);
+          const invalidFields = requestedFields.filter(
+            (field) => !allowedFields.includes(field)
+          );
 
-          // Send notifications for status changes
-          try {
-            if (updates.status === "active" && oldStatus !== "active") {
-              await NotificationService.createPostApprovedNotification(
-                post.author.toString(),
-                post.title.toString(),
-                post._id.toString()
-              );
-            } else if (
-              updates.status === "rejected" &&
-              oldStatus !== "rejected"
-            ) {
-              await NotificationService.createPostRejectedNotification(
-                post.author.toString(),
-                post.title.toString(),
-                post._id.toString(),
-                post.rejectedReason?.toString()
-              );
-            } else if (
-              updates.status === "pending" &&
-              oldStatus === "deleted"
-            ) {
-              // Notification for restore from deleted to pending by employee
-              console.log(
-                `📨 Post ${id} restored from deleted to pending by employee - notification could be sent here`
-              );
-            }
-          } catch (error) {
-            console.error("❌ Error sending notification:", error);
-            // Don't fail the request for notification error
+          if (invalidFields.length > 0) {
+            return res.status(403).json({
+              success: false,
+              message: `Employee không có quyền chỉnh sửa tin đăng. Chỉ có thể thay đổi trạng thái. Các trường không được phép: ${invalidFields.join(
+                ", "
+              )}`,
+            });
           }
 
-          console.log(
-            `✅ Post ${id} status updated from "${oldStatus}" to "${updates.status}" by employee ${currentUserId}`
-          );
+          // Handle status change only
+          if (updates.status) {
+            const oldStatus = post.status;
+            post.status = updates.status;
+
+            // Add employee info for status changes
+            if (updates.status === "active") {
+              post.approvedAt = new Date();
+              post.approvedBy = new mongoose.Types.ObjectId(currentUserId);
+              post.rejectedAt = undefined;
+              post.rejectedBy = undefined;
+              post.rejectedReason = undefined;
+            } else if (updates.status === "rejected") {
+              post.rejectedAt = new Date();
+              post.rejectedBy = new mongoose.Types.ObjectId(currentUserId);
+              post.rejectedReason = updates.reason || "Không đạt yêu cầu";
+              post.approvedAt = undefined;
+              post.approvedBy = undefined;
+            } else if (updates.status === "pending") {
+              post.approvedAt = undefined;
+              post.approvedBy = undefined;
+              post.rejectedAt = undefined;
+              post.rejectedBy = undefined;
+              post.rejectedReason = undefined;
+              console.log(
+                `📋 Post ${id} status changed to pending by employee - cleared approval/rejection data`
+              );
+            }
+
+            await post.save();
+
+            // Send notifications for status changes
+            try {
+              if (updates.status === "active" && oldStatus !== "active") {
+                await NotificationService.createPostApprovedNotification(
+                  post.author.toString(),
+                  post.title.toString(),
+                  post._id.toString()
+                );
+              } else if (
+                updates.status === "rejected" &&
+                oldStatus !== "rejected"
+              ) {
+                await NotificationService.createPostRejectedNotification(
+                  post.author.toString(),
+                  post.title.toString(),
+                  post._id.toString(),
+                  post.rejectedReason?.toString()
+                );
+              } else if (
+                updates.status === "pending" &&
+                oldStatus === "deleted"
+              ) {
+                console.log(
+                  `📨 Post ${id} restored from deleted to pending by employee - notification could be sent here`
+                );
+              }
+            } catch (error) {
+              console.error("❌ Error sending notification:", error);
+            }
+
+            console.log(
+              `✅ Post ${id} status updated from "${oldStatus}" to "${updates.status}" by employee ${currentUserId}`
+            );
+          }
         }
       } else if (userRole === "admin") {
         // Admin can edit all fields
@@ -1496,6 +1599,11 @@ export const AdminController = {
         success: true,
         message:
           userRole === "admin"
+            ? "Tin đăng đã được cập nhật thành công"
+            : userRole === "employee" &&
+              (
+                await UserPermission.findOne({ userId: currentUserId })
+              )?.permissions.includes("edit_post")
             ? "Tin đăng đã được cập nhật thành công"
             : "Trạng thái tin đăng đã được cập nhật",
         data: { post: updatedPost },

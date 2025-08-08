@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { SidebarController } from "../controllers/SidebarController";
-import { authenticateUser, authenticateAdmin } from "../middleware/index";
+import { requireAuth, requireAdmin } from "../middleware";
 
 const router = Router();
 
@@ -9,39 +9,35 @@ const router = Router();
  * @desc Lấy cấu hình sidebar cho user hiện tại
  * @access Private
  */
-router.get("/config", authenticateUser, SidebarController.getSidebarConfig);
+router.get("/config", requireAuth, SidebarController.getSidebarConfig);
 
 /**
  * @route GET /api/sidebar/configs
  * @desc Lấy tất cả cấu hình sidebar (Admin only)
  * @access Private (Admin)
  */
-router.get("/configs", authenticateAdmin, SidebarController.getAllConfigs);
+router.get("/configs", requireAdmin, SidebarController.getAllConfigs);
 
 /**
  * @route POST /api/sidebar/configs
  * @desc Tạo cấu hình sidebar mới (Admin only)
  * @access Private (Admin)
  */
-router.post("/configs", authenticateAdmin, SidebarController.createConfig);
+router.post("/configs", requireAdmin, SidebarController.createConfig);
 
 /**
  * @route PUT /api/sidebar/configs/:id
  * @desc Cập nhật cấu hình sidebar (Admin only)
  * @access Private (Admin)
  */
-router.put("/configs/:id", authenticateAdmin, SidebarController.updateConfig);
+router.put("/configs/:id", requireAdmin, SidebarController.updateConfig);
 
 /**
  * @route DELETE /api/sidebar/configs/:id
  * @desc Xóa cấu hình sidebar (Admin only)
  * @access Private (Admin)
  */
-router.delete(
-  "/configs/:id",
-  authenticateAdmin,
-  SidebarController.deleteConfig
-);
+router.delete("/configs/:id", requireAdmin, SidebarController.deleteConfig);
 
 /**
  * @route PUT /api/sidebar/configs/:id/default
@@ -50,7 +46,7 @@ router.delete(
  */
 router.put(
   "/configs/:id/default",
-  authenticateAdmin,
+  requireAdmin,
   SidebarController.setDefaultConfig
 );
 
@@ -61,7 +57,7 @@ router.put(
  */
 router.put(
   "/configs/:configId/reorder-items",
-  authenticateAdmin,
+  requireAdmin,
   SidebarController.reorderItems
 );
 
@@ -72,7 +68,7 @@ router.put(
  */
 router.post(
   "/configs/:configId/items",
-  authenticateAdmin,
+  requireAdmin,
   SidebarController.addMenuItem
 );
 
@@ -83,8 +79,7 @@ router.post(
  */
 router.delete(
   "/configs/:configId/items/:itemId",
-  authenticateAdmin,
+  requireAdmin,
   SidebarController.removeMenuItem
 );
-
 export default router;

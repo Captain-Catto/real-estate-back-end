@@ -68,3 +68,4 @@ export { NotificationController } from "./NotificationController";
 export { PackageController } from "./PackageController";
 export { NewsController } from "./NewsController";
 export { HeaderSettingsController } from "./HeaderSettingsController";
+export { PermissionController } from "./PermissionController";

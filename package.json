@@ -19,7 +19,9 @@
     "test-notifications-simple": "ts-node scripts/testNotificationSimple.ts",
     "create-admin": "ts-node scripts/createAdminUser.ts",
     "seed:areas-prices": "ts-node scripts/seedAreasAndPrices.ts",
-    "update-avatars": "ts-node src/scripts/updateUsersAvatar.ts"
+    "update-avatars": "ts-node src/scripts/updateUsersAvatar.ts",
+    "update-sidebar-permissions": "cd scripts && npm run update-permissions",
+    "update-sidebar-role-permissions": "cd scripts && npm run update-role-permissions"
   },
   "dependencies": {
     "@ai-sdk/groq": "^1.2.9",
@@ -27,7 +29,7 @@
     "@types/node-cron": "^3.0.11",
     "ai": "^4.3.16",
     "aws-sdk": "^2.1692.0",
-    "bcrypt": "^5.1.0",
+    "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

@@ -1,8 +1,15 @@
 import { Router, Express } from "express";
-import { authenticateUser, authenticateAdmin } from "../middleware";
+import {
+  authenticateUser,
+  authenticateAdmin,
+  requirePermission,
+  requireAnyPermission,
+} from "../middleware";
 import { uploadS3 } from "../utils/s3Upload";
 import paymentSchedulerRoutes from "./paymentSchedulerRoutes";
 import sidebarRoutes from "./sidebarRoutes";
+import permissionRoutes from "./permissionRoutes";
+import statsRoutes, { publicRouter as statsPublicRouter } from "./statsRoutes";
 import {
   IndexController,
   AuthController,
@@ -290,41 +297,41 @@ export function setRoutes(app: Express) {
   // Admin location management routes
   locationRouter.get(
     "/",
-    authenticateAdmin,
+    requirePermission("view_settings"),
     locationController.getProvincesWithChildren.bind(locationController)
   );
 
   // Province CRUD
   locationRouter.post(
     "/",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     locationController.createProvince.bind(locationController)
   );
   locationRouter.put(
     "/:id",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     locationController.updateProvince.bind(locationController)
   );
   locationRouter.delete(
     "/:id",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     locationController.deleteProvince.bind(locationController)
   );
 
   // Ward CRUD
   locationRouter.post(
     "/:provinceId/wards",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     locationController.createWard.bind(locationController)
   );
   locationRouter.put(
     "/wards/:id",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     locationController.updateWard.bind(locationController)
   );
   locationRouter.delete(
     "/wards/:id",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     locationController.deleteWard.bind(locationController)
   );
 
@@ -368,7 +375,7 @@ export function setRoutes(app: Express) {
   );
   projectRouter.get(
     "/admin/list",
-    authenticateAdmin,
+    requirePermission("view_projects"),
     projectController.getAdminProjects.bind(projectController)
   );
   projectRouter.get("/", projectController.getProjects.bind(projectController));
@@ -386,17 +393,17 @@ export function setRoutes(app: Express) {
   // Admin project routes
   projectRouter.post(
     "/admin",
-    authenticateAdmin,
+    requirePermission("create_project"),
     projectController.createProject.bind(projectController)
   );
   projectRouter.put(
     "/admin/:id",
-    authenticateAdmin,
+    requirePermission("edit_project"),
     projectController.updateProject.bind(projectController)
   );
   projectRouter.delete(
     "/admin/:id",
-    authenticateAdmin,
+    requirePermission("delete_project"),
     projectController.deleteProject.bind(projectController)
   );
   // AI
@@ -452,35 +459,35 @@ export function setRoutes(app: Express) {
   // Get all categories for admin
   adminCategoryRouter.get(
     "/",
-    authenticateAdmin,
+    requirePermission("manage_categories"),
     categoryController.getAdminCategories.bind(categoryController)
   );
 
   // Create new category
   adminCategoryRouter.post(
     "/",
-    authenticateAdmin,
+    requirePermission("manage_categories"),
     categoryController.createCategory.bind(categoryController)
   );
 
   // Update category order
   adminCategoryRouter.put(
     "/order",
-    authenticateAdmin,
+    requirePermission("manage_categories"),
     categoryController.updateCategoriesOrder.bind(categoryController)
   );
 
   // Update category
   adminCategoryRouter.put(
     "/:id",
-    authenticateAdmin,
+    requirePermission("manage_categories"),
     categoryController.updateCategory.bind(categoryController)
   );
 
   // Delete category
   adminCategoryRouter.delete(
     "/:id",
-    authenticateAdmin,
+    requirePermission("manage_categories"),
     categoryController.deleteCategory.bind(categoryController)
   );
 
@@ -491,49 +498,49 @@ export function setRoutes(app: Express) {
   // Get all areas for admin
   adminAreaRouter.get(
     "/",
-    authenticateAdmin,
+    requirePermission("manage_areas"),
     areaController.getAreas.bind(areaController)
   );
 
   // Create new area
   adminAreaRouter.post(
     "/",
-    authenticateAdmin,
+    requirePermission("manage_areas"),
     areaController.createArea.bind(areaController)
   );
 
   // Update area order
   adminAreaRouter.put(
     "/order",
-    authenticateAdmin,
+    requirePermission("manage_areas"),
     areaController.updateAreaOrder.bind(areaController)
   );
 
   // Get area by ID
   adminAreaRouter.get(
     "/:id",
-    authenticateAdmin,
+    requirePermission("manage_areas"),
     areaController.getAreaById.bind(areaController)
   );
 
   // Update area
   adminAreaRouter.put(
     "/:id",
-    authenticateAdmin,
+    requirePermission("manage_areas"),
     areaController.updateArea.bind(areaController)
   );
 
   // Toggle area status
   adminAreaRouter.patch(
     "/:id/toggle-status",
-    authenticateAdmin,
+    requirePermission("manage_areas"),
     areaController.toggleAreaStatus.bind(areaController)
   );
 
   // Delete area
   adminAreaRouter.delete(
     "/:id",
-    authenticateAdmin,
+    requirePermission("manage_areas"),
     areaController.deleteArea.bind(areaController)
   );
 
@@ -544,49 +551,49 @@ export function setRoutes(app: Express) {
   // Get all prices for admin
   adminPriceRouter.get(
     "/",
-    authenticateAdmin,
+    requirePermission("manage_prices"),
     priceController.getPrices.bind(priceController)
   );
 
   // Create new price
   adminPriceRouter.post(
     "/",
-    authenticateAdmin,
+    requirePermission("manage_prices"),
     priceController.createPrice.bind(priceController)
   );
 
   // Update price order
   adminPriceRouter.put(
     "/order",
-    authenticateAdmin,
+    requirePermission("manage_prices"),
     priceController.updatePriceOrder.bind(priceController)
   );
 
   // Get price by ID
   adminPriceRouter.get(
     "/:id",
-    authenticateAdmin,
+    requirePermission("manage_prices"),
     priceController.getPriceById.bind(priceController)
   );
 
   // Update price
   adminPriceRouter.put(
     "/:id",
-    authenticateAdmin,
+    requirePermission("manage_prices"),
     priceController.updatePrice.bind(priceController)
   );
 
   // Toggle price status
   adminPriceRouter.patch(
     "/:id/toggle-status",
-    authenticateAdmin,
+    requirePermission("manage_prices"),
     priceController.togglePriceStatus.bind(priceController)
   );
 
   // Delete price
   adminPriceRouter.delete(
     "/:id",
-    authenticateAdmin,
+    requirePermission("manage_prices"),
     priceController.deletePrice.bind(priceController)
   );
 
@@ -649,92 +656,116 @@ export function setRoutes(app: Express) {
   const adminRouter = Router();
   app.use("/api/admin", adminRouter);
 
-  // Admin statistics routes
-  adminRouter.get("/stats", authenticateUser, AdminController.getAdminStats);
+  // Admin dashboard routes (basic dashboard data)
+  adminRouter.get(
+    "/stats",
+    requirePermission("view_dashboard"),
+    AdminController.getAdminStats
+  );
   adminRouter.get(
     "/recent-activities",
-    authenticateUser,
+    requirePermission("view_dashboard"),
     AdminController.getRecentActivities
   );
-  adminRouter.get("/top-posts", authenticateUser, AdminController.getTopPosts);
+  adminRouter.get(
+    "/top-posts",
+    requirePermission("view_dashboard"),
+    AdminController.getTopPosts
+  );
 
   // Admin posts management routes
-  adminRouter.get("/posts", authenticateUser, AdminController.getAdminPosts);
+  adminRouter.get(
+    "/posts",
+    requirePermission("view_posts"),
+    AdminController.getAdminPosts
+  );
   adminRouter.get(
     "/posts/stats",
-    authenticateUser,
+    requirePermission("view_posts"),
     AdminController.getAdminPostsStats
   );
   adminRouter.get(
     "/posts/:id",
-    authenticateUser,
+    requirePermission("view_posts"),
     AdminController.getAdminPostById
   );
   adminRouter.put(
     "/posts/:id",
-    authenticateUser,
+    requirePermission("edit_post"),
     AdminController.updateAdminPost
   );
   adminRouter.put(
     "/posts/:id/approve",
-    authenticateUser,
+    requirePermission("approve_post"),
     AdminController.approvePost
   );
   adminRouter.put(
     "/posts/:id/reject",
-    authenticateUser,
+    requirePermission("reject_post"),
     AdminController.rejectPost
   );
   adminRouter.delete(
     "/posts/:id",
-    authenticateUser,
+    requirePermission("delete_post"),
     AdminController.deleteAdminPost
   );
 
   // Admin user management routes
-  adminRouter.get("/users", authenticateUser, AdminController.getUsers);
+  adminRouter.get(
+    "/users",
+    requirePermission("view_users"),
+    AdminController.getUsers
+  );
   adminRouter.get(
     "/user-stats",
-    authenticateUser,
+    requirePermission("view_users"),
     AdminController.getUserStats
   );
-  adminRouter.get("/users/:id", authenticateUser, AdminController.getUserById);
+  adminRouter.get(
+    "/users/:id",
+    requirePermission("view_users"),
+    AdminController.getUserById
+  );
   adminRouter.get(
     "/users/:id/posts",
-    authenticateUser,
+    requirePermission("view_users"),
     AdminController.getUserPosts
   );
   adminRouter.get(
     "/users/:id/payments",
-    authenticateUser,
+    requirePermission("view_users"),
     AdminController.getUserPayments
   );
   adminRouter.get(
     "/users/:id/logs",
-    authenticateUser,
+    requirePermission("view_users"),
     AdminController.getUserLogs
   );
-  adminRouter.put("/users/:id", authenticateUser, AdminController.updateUser);
+  adminRouter.put(
+    "/users/:id",
+    requirePermission("edit_user"),
+    AdminController.updateUser
+  );
   adminRouter.patch(
     "/users/:id/status",
-    authenticateUser,
+    requirePermission("change_user_status"),
     AdminController.updateUserStatus
   );
   adminRouter.delete(
     "/users/:id",
-    authenticateUser,
+    requirePermission("delete_user"),
     AdminController.deleteUser
   );
 
   // Admin payment management routes
   adminRouter.get(
     "/payments",
-    authenticateUser,
+    requirePermission("view_transactions"),
     AdminController.getAllPayments
   );
   adminRouter.post(
     "/payments/cancel-expired",
-    authenticateUser,
+    requirePermission("view_transactions"),
     AdminController.cancelExpiredPayments
   );
 
@@ -762,22 +793,22 @@ export function setRoutes(app: Express) {
   // Admin developer routes
   developerRouter.get(
     "/admin/list",
-    authenticateAdmin,
+    requirePermission("view_users"),
     developerController.getAdminDevelopers.bind(developerController)
   );
   developerRouter.post(
     "/",
-    authenticateAdmin,
+    requirePermission("create_user"),
     developerController.createDeveloper.bind(developerController)
   );
   developerRouter.put(
     "/:id",
-    authenticateAdmin,
+    requirePermission("edit_user"),
     developerController.updateDeveloper.bind(developerController)
   );
   developerRouter.delete(
     "/:id",
-    authenticateAdmin,
+    requirePermission("delete_user"),
     developerController.deleteDeveloper.bind(developerController)
   );
 
@@ -812,6 +843,13 @@ export function setRoutes(app: Express) {
     NotificationController.deleteNotification
   );
 
+  // Header Settings - Public Routes
+  const headerRouter = Router();
+  app.use("/api/header", headerRouter);
+
+  // Public route - get header menus for display (không cần authentication)
+  headerRouter.get("/menus", HeaderSettingsController.getHeaderMenus);
+
   // Package routes
   const packageRouter = Router();
   app.use("/api/packages", packageRouter);
@@ -828,66 +866,66 @@ export function setRoutes(app: Express) {
 
   adminPackageRouter.get(
     "/",
-    authenticateAdmin,
+    requirePermission("view_transactions"),
     packageController.getAllPackages.bind(packageController)
   );
   adminPackageRouter.post(
     "/",
-    authenticateAdmin,
+    requirePermission("create_transaction"),
     packageController.createPackage.bind(packageController)
   );
   adminPackageRouter.get(
     "/:id",
-    authenticateAdmin,
+    requirePermission("view_transactions"),
     packageController.getPackageById.bind(packageController)
   );
   adminPackageRouter.put(
     "/:id",
-    authenticateAdmin,
+    requirePermission("edit_transaction"),
     packageController.updatePackage.bind(packageController)
   );
   adminPackageRouter.delete(
     "/:id",
-    authenticateAdmin,
+    requirePermission("edit_transaction"),
     packageController.deletePackage.bind(packageController)
   );
 
   // Header Settings Routes
   adminRouter.get(
     "/header-settings",
-    authenticateAdmin,
+    requirePermission("view_settings"),
     HeaderSettingsController.getHeaderMenus
   );
   adminRouter.post(
     "/header-settings",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     HeaderSettingsController.createHeaderMenu
   );
   // Specific routes must come before parameterized routes
   adminRouter.put(
     "/header-settings/reorder",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     HeaderSettingsController.updateMenuOrder
   );
   adminRouter.post(
     "/header-settings/reset",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     HeaderSettingsController.resetToDefault
   );
   // Parameterized routes come after specific routes
   adminRouter.put(
     "/header-settings/:id",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     HeaderSettingsController.updateHeaderMenu
   );
   adminRouter.delete(
     "/header-settings/:id",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     HeaderSettingsController.deleteHeaderMenu
   );
   adminRouter.patch(
     "/header-settings/:id/toggle",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     HeaderSettingsController.toggleMenuStatus
   );
 
@@ -924,17 +962,25 @@ export function setRoutes(app: Express) {
 
   // Get all news for admin (with filters)
   // GET /api/news/admin?page=1&limit=20&status=all&category=all&author=userId&search=keyword
-  newsRouter.get("/admin", authenticateUser, newsController.getAdminNews);
+  newsRouter.get(
+    "/admin",
+    requirePermission("view_news"),
+    newsController.getAdminNews
+  );
 
   // Create new news
   // POST /api/news/admin
-  newsRouter.post("/admin", authenticateUser, newsController.createNews);
+  newsRouter.post(
+    "/admin",
+    requirePermission("create_news"),
+    newsController.createNews
+  );
 
   // Get news statistics (admin only)
   // GET /api/news/admin/stats
   newsRouter.get(
     "/admin/stats",
-    authenticateAdmin,
+    requirePermission("view_news"),
     newsController.getNewsStats
   );
 
@@ -943,35 +989,35 @@ export function setRoutes(app: Express) {
   // GET /api/news/admin/categories
   newsRouter.get(
     "/admin/categories",
-    authenticateAdmin,
+    requirePermission("manage_news_categories"),
     newsCategoryController.getAdminNewsCategories
   );
 
   // POST /api/news/admin/categories
   newsRouter.post(
     "/admin/categories",
-    authenticateAdmin,
+    requirePermission("manage_news_categories"),
     newsCategoryController.createNewsCategory
   );
 
   // PUT /api/news/admin/categories/order
   newsRouter.put(
     "/admin/categories/order",
-    authenticateAdmin,
+    requirePermission("manage_news_categories"),
     newsCategoryController.updateNewsCategoriesOrder
   );
 
   // PUT /api/news/admin/categories/:id
   newsRouter.put(
     "/admin/categories/:id",
-    authenticateAdmin,
+    requirePermission("manage_news_categories"),
     newsCategoryController.updateNewsCategory
   );
 
   // DELETE /api/news/admin/categories/:id
   newsRouter.delete(
     "/admin/categories/:id",
-    authenticateAdmin,
+    requirePermission("manage_news_categories"),
     newsCategoryController.deleteNewsCategory
   );
 
@@ -979,21 +1025,33 @@ export function setRoutes(app: Express) {
 
   // Get single news for editing
   // GET /api/news/admin/:id
-  newsRouter.get("/admin/:id", authenticateUser, newsController.getNewsById);
+  newsRouter.get(
+    "/admin/:id",
+    requirePermission("edit_news"),
+    newsController.getNewsById
+  );
 
   // Update news
   // PUT /api/news/admin/:id
-  newsRouter.put("/admin/:id", authenticateUser, newsController.updateNews);
+  newsRouter.put(
+    "/admin/:id",
+    requirePermission("edit_news"),
+    newsController.updateNews
+  );
 
   // Delete news
   // DELETE /api/news/admin/:id
-  newsRouter.delete("/admin/:id", authenticateUser, newsController.deleteNews);
+  newsRouter.delete(
+    "/admin/:id",
+    requirePermission("delete_news"),
+    newsController.deleteNews
+  );
 
   // Update news status (admin only)
   // PUT /api/news/admin/:id/status
   newsRouter.put(
     "/admin/:id/status",
-    authenticateAdmin,
+    requirePermission("feature_news"),
     newsController.updateNewsStatus
   );
 
@@ -1002,6 +1060,15 @@ export function setRoutes(app: Express) {
 
   // Sidebar Configuration Routes
   app.use("/api/sidebar", sidebarRoutes);
+
+  // Permission Routes
+  app.use("/api/permissions", permissionRoutes);
+
+  // Stats Routes (Admin only)
+  app.use("/api/admin/stats", statsRoutes);
+
+  // Public Stats Routes (for tracking page views)
+  app.use("/api/stats", statsPublicRouter);
 
   // ===== CONTACT ROUTES =====
   const contactRouter = Router();
@@ -1013,52 +1080,52 @@ export function setRoutes(app: Express) {
   // Admin routes - Contact management
   contactRouter.get(
     "/admin/contact",
-    authenticateAdmin,
+    requirePermission("view_settings"),
     ContactController.getContactMessages
   );
   contactRouter.get(
     "/admin/contact/stats",
-    authenticateAdmin,
+    requirePermission("view_settings"),
     ContactController.getContactStats
   );
   contactRouter.get(
     "/admin/contact/:id",
-    authenticateAdmin,
+    requirePermission("view_settings"),
     ContactController.getContactMessageById
   );
   contactRouter.put(
     "/admin/contact/:id/status",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     ContactController.updateContactMessageStatus
   );
   contactRouter.post(
     "/admin/contact/:id/reply",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     ContactController.replyToContactMessage
   );
   contactRouter.patch(
     "/admin/contact/bulk/status",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     ContactController.bulkUpdateStatus
   );
   contactRouter.delete(
     "/admin/contact/:id",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     ContactController.deleteContactMessage
   );
   contactRouter.post(
     "/admin/contact/logs",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     ContactController.createContactLog
   );
   contactRouter.get(
     "/admin/contact/:contactId/logs",
-    authenticateAdmin,
+    requirePermission("view_settings"),
     ContactController.getContactLogs
   );
   contactRouter.put(
     "/admin/contact/logs/:logId",
-    authenticateAdmin,
+    requirePermission("edit_settings"),
     ContactController.updateContactLogNote
   );
 }

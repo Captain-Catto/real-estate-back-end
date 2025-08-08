@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "update-sidebar-permissions": "cd scripts && npm run update-permissions",
+    "update-sidebar-role-permissions": "cd scripts && npm run update-role-permissions"
+  }
+}
