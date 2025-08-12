@@ -1538,6 +1538,7 @@ export class PostController {
         area,
         propertyId,
         project,
+        search, // Add search parameter
       } = req.query;
 
       const page = parseInt(req.query.page as string) || 1;
@@ -1559,6 +1560,7 @@ export class PostController {
         area,
         propertyId,
         project,
+        search, // Log search term
       });
 
       // 2. Xây dựng filter TRƯỚC khi truy vấn
@@ -1577,6 +1579,38 @@ export class PostController {
       ];
 
       if (type) filter.type = type.toString();
+
+      // Handle text search - search in title and description (accent-insensitive)
+      if (search && search.toString().trim()) {
+        const searchTerm = search.toString().trim();
+        console.log(`🔍 Text search term: "${searchTerm}"`);
+
+        // Create regex pattern for accent-insensitive search
+        const searchPattern = searchTerm
+          .replace(/[aáàảãạăắằẳẵặâấầẩẫậ]/gi, "[aáàảãạăắằẳẵặâấầẩẫậ]")
+          .replace(/[eéèẻẽẹêếềểễệ]/gi, "[eéèẻẽẹêếềểễệ]")
+          .replace(/[iíìỉĩị]/gi, "[iíìỉĩị]")
+          .replace(/[oóòỏõọôốồổỗộơớờởỡợ]/gi, "[oóòỏõọôốồổỗộơớờởỡợ]")
+          .replace(/[uúùủũụưứừửữự]/gi, "[uúùủũụưứừửữự]")
+          .replace(/[yýỳỷỹỵ]/gi, "[yýỳỷỹỵ]")
+          .replace(/[dđ]/gi, "[dđ]");
+
+        const searchCondition = {
+          $or: [
+            { title: { $regex: searchPattern, $options: "i" } },
+            { description: { $regex: searchPattern, $options: "i" } },
+          ],
+        };
+
+        // Add search condition to existing $and array or create new one
+        if (filter.$and) {
+          filter.$and.push(searchCondition);
+        } else {
+          filter.$and = [searchCondition];
+        }
+
+        console.log("🔍 Added text search condition to filter");
+      }
 
       // Handle category - convert slug to ObjectId
       if (category) {
@@ -2715,6 +2749,67 @@ export class PostController {
       });
     } catch (error) {
       console.error("Get featured posts error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  // Delete post (soft delete)
+  async deletePost(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { postId } = req.params;
+      const userId = req.user?.userId;
+
+      if (!postId) {
+        return res.status(400).json({
+          success: false,
+          message: "Post ID is required",
+        });
+      }
+
+      // Tìm post
+      const post = await Post.findById(postId);
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Post not found",
+        });
+      }
+
+      // Kiểm tra quyền: chỉ author hoặc admin mới có thể xóa
+      if (post.author.toString() !== userId && req.user?.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "You don't have permission to delete this post",
+        });
+      }
+
+      // Soft delete: cập nhật status thành 'deleted'
+      const updatedPost = await Post.findByIdAndUpdate(
+        postId,
+        {
+          status: "deleted",
+          updatedAt: new Date(),
+        },
+        { new: true }
+      );
+
+      if (!updatedPost) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to delete post",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Post deleted successfully",
+        data: updatedPost,
+      });
+    } catch (error) {
+      console.error("Error deleting post:", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",

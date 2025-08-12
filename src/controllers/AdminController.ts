@@ -1238,6 +1238,44 @@ export const AdminController = {
     }
   },
 
+  // DELETE /api/admin/posts/:id/permanent - Permanently delete post from database
+  permanentDeletePost: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      // Check if post exists
+      const post = await Post.findById(id);
+      if (!post) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy tin đăng",
+        });
+      }
+
+      // Only allow permanent deletion of already soft-deleted posts
+      if (post.status !== "deleted") {
+        return res.status(400).json({
+          success: false,
+          message: "Chỉ có thể xóa vĩnh viễn các tin đăng đã bị xóa mềm",
+        });
+      }
+
+      // Permanently delete from database
+      await Post.findByIdAndDelete(id);
+
+      res.json({
+        success: true,
+        message: "Đã xóa tin đăng vĩnh viễn khỏi hệ thống",
+      });
+    } catch (error) {
+      console.error("Error permanently deleting post:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi xóa vĩnh viễn tin đăng",
+      });
+    }
+  },
+
   // GET /api/admin/posts/:id - Get single post by ID for admin
   getAdminPostById: async (req: Request, res: Response) => {
     try {

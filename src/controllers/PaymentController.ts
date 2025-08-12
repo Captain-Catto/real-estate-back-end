@@ -28,6 +28,12 @@ export class PaymentController {
       const { amount, orderInfo, postId, returnUrl } = req.body;
       const vnpayConfig = getVnpayConfig();
 
+      console.log("🔍 Payment request received:", {
+        amount,
+        orderInfo,
+        postId,
+      });
+
       if (!userId)
         return res
           .status(401)
@@ -219,57 +225,111 @@ export class PaymentController {
           .json({ success: false, message: "Payment not found" });
       }
 
+      let updatedPayment;
       if (vnpResponseCode === "00" && vnpTransactionStatus === "00") {
-        payment.status = "completed";
-        payment.transactionId = vnpTransactionNo;
-        payment.completedAt = new Date();
-        payment.paymentDate = new Date(
-          vnpPayDate.replace(
-            /(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/,
-            "$1-$2-$3T$4:$5:$6"
-          )
+        // Use atomic update to prevent race conditions
+        updatedPayment = await Payment.findOneAndUpdate(
+          {
+            vnpayTransactionRef: vnpTxnRef,
+            status: "pending", // Only update if still pending
+          },
+          {
+            status: "completed",
+            transactionId: vnpTransactionNo,
+            completedAt: new Date(),
+            paymentDate: new Date(
+              vnpPayDate.replace(
+                /(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/,
+                "$1-$2-$3T$4:$5:$6"
+              )
+            ),
+            metadata: {
+              ...payment.metadata,
+              vnpResponseCode,
+              vnpTransactionStatus,
+              vnpTransactionNo,
+              vnpPayDate,
+              serverProcessed: true, // Mark as processed by server IPN
+            },
+          },
+          {
+            new: true,
+            session,
+            runValidators: true,
+          }
         );
-        payment.metadata = {
-          ...payment.metadata,
-          vnpResponseCode,
-          vnpTransactionStatus,
-          vnpTransactionNo,
-          vnpPayDate,
-        };
 
-        // Save payment first
-        await payment.save({ session });
-
-        // Update wallet for completed payment
-        await this.updateWalletAfterPayment(payment, session);
+        // If update was successful, process wallet
+        if (updatedPayment) {
+          console.log(
+            `🔔 IPN processing payment ${payment.orderId} - atomic update successful`
+          );
+          await this.updateWalletAfterPayment(updatedPayment, session);
+        } else {
+          console.log(
+            `🔔 IPN payment ${payment.orderId} already processed by another request`
+          );
+          // Payment was already processed, just return success
+          updatedPayment = await Payment.findOne({
+            vnpayTransactionRef: vnpTxnRef,
+          });
+        }
       } else {
-        payment.status = "failed";
-        payment.failedAt = new Date();
-        payment.metadata = {
-          ...payment.metadata,
-          vnpResponseCode,
-          vnpTransactionStatus,
-          failureReason: this.getVNPayErrorMessage(vnpResponseCode),
-        };
+        // Update to failed status
+        updatedPayment = await Payment.findOneAndUpdate(
+          {
+            vnpayTransactionRef: vnpTxnRef,
+            status: "pending",
+          },
+          {
+            status: "failed",
+            failedAt: new Date(),
+            metadata: {
+              ...payment.metadata,
+              vnpResponseCode,
+              vnpTransactionStatus,
+              failureReason: this.getVNPayErrorMessage(vnpResponseCode),
+              serverProcessed: true,
+            },
+          },
+          {
+            new: true,
+            session,
+            runValidators: true,
+          }
+        );
 
-        await payment.save({ session });
+        // If no update happened, get current state
+        if (!updatedPayment) {
+          updatedPayment = await Payment.findOne({
+            vnpayTransactionRef: vnpTxnRef,
+          });
+        }
       }
 
       // Commit transaction
       await session.commitTransaction();
 
+      // Ensure we have a valid payment object
+      if (!updatedPayment) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to process payment update",
+        });
+      }
+
       res.json({
-        success: payment.status === "completed",
+        success: updatedPayment.status === "completed",
         message:
-          payment.status === "completed"
+          updatedPayment.status === "completed"
             ? "Payment completed successfully"
             : "Payment failed",
         data: {
-          orderId: payment.orderId,
+          orderId: updatedPayment.orderId,
           amount: vnpAmount,
-          status: payment.status,
-          transactionId: vnpTransactionNo,
-          paymentDate: payment.paymentDate,
+          status: updatedPayment.status,
+          transactionId: updatedPayment.transactionId || vnpTransactionNo,
+          paymentDate: updatedPayment.paymentDate,
         },
       });
     } catch (error) {
@@ -637,7 +697,7 @@ export class PaymentController {
         vnpayData
       );
 
-      // Find the payment
+      // Find the payment and check authorization
       const payment = await Payment.findOne({ orderId });
 
       if (!payment)
@@ -653,31 +713,22 @@ export class PaymentController {
         });
       }
 
-      // Only update pending payments
-      if (payment.status !== "pending") {
-        return res.json({
-          success: true,
-          message: "Payment already processed",
-          data: {
-            orderId: payment.orderId,
-            status: payment.status,
-          },
-        });
-      }
+      // Prepare update data based on request
+      let updateData: any = {};
+      let shouldProcessWallet = false;
 
-      // Check if we should force a status
       if (forceStatus === "failed") {
-        payment.status = "failed";
-        payment.failedAt = new Date();
-
-        // Add VNPay response code info to metadata
         const vnp_ResponseCode = vnpayData.vnp_ResponseCode;
-        payment.metadata = {
-          ...payment.metadata,
-          ...vnpayData.allParams,
-          clientUpdated: true,
-          vnpResponseCode: vnp_ResponseCode,
-          failureReason: this.getVNPayErrorMessage(vnp_ResponseCode),
+        updateData = {
+          status: "failed",
+          failedAt: new Date(),
+          metadata: {
+            ...payment.metadata,
+            ...vnpayData.allParams,
+            clientUpdated: true,
+            vnpResponseCode: vnp_ResponseCode,
+            failureReason: this.getVNPayErrorMessage(vnp_ResponseCode),
+          },
         };
       } else {
         // Normal processing based on VNPay data
@@ -685,13 +736,10 @@ export class PaymentController {
         const vnp_TransactionStatus = vnpayData.vnp_TransactionStatus;
 
         if (vnp_ResponseCode === "00" && vnp_TransactionStatus === "00") {
-          payment.status = "completed";
-          payment.transactionId = vnpayData.vnp_TransactionNo;
-          payment.completedAt = new Date();
-
+          let paymentDate = new Date();
           if (vnpayData.vnp_PayDate) {
             try {
-              payment.paymentDate = new Date(
+              paymentDate = new Date(
                 vnpayData.vnp_PayDate.replace(
                   /(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/,
                   "$1-$2-$3T$4:$5:$6"
@@ -699,40 +747,87 @@ export class PaymentController {
               );
             } catch (e) {
               console.error("Error parsing payment date:", e);
-              payment.paymentDate = new Date();
             }
-          } else {
-            payment.paymentDate = new Date();
           }
 
-          // Store all VNPay data in metadata
-          payment.metadata = {
-            ...payment.metadata,
-            ...vnpayData.allParams,
-            vnpResponseCode: vnp_ResponseCode,
-            vnpTransactionStatus: vnp_TransactionStatus,
-            clientUpdated: true,
+          updateData = {
+            status: "completed",
+            transactionId: vnpayData.vnp_TransactionNo,
+            completedAt: new Date(),
+            paymentDate: paymentDate,
+            metadata: {
+              ...payment.metadata,
+              ...vnpayData.allParams,
+              vnpResponseCode: vnp_ResponseCode,
+              vnpTransactionStatus: vnp_TransactionStatus,
+              clientUpdated: true,
+            },
           };
+          shouldProcessWallet = true;
         } else {
-          payment.status = "failed";
-          payment.failedAt = new Date();
-          payment.metadata = {
-            ...payment.metadata,
-            ...vnpayData.allParams,
-            clientUpdated: true,
-            failureReason: this.getVNPayErrorMessage(vnp_ResponseCode),
+          updateData = {
+            status: "failed",
+            failedAt: new Date(),
+            metadata: {
+              ...payment.metadata,
+              ...vnpayData.allParams,
+              clientUpdated: true,
+              failureReason: this.getVNPayErrorMessage(vnp_ResponseCode),
+            },
           };
         }
       }
 
-      await payment.save();
+      // Use atomic findOneAndUpdate to prevent race conditions
+      // Only update if status is still "pending"
+      const updatedPayment = await Payment.findOneAndUpdate(
+        {
+          orderId: orderId,
+          status: "pending", // Only update if still pending
+        },
+        updateData,
+        {
+          new: true, // Return updated document
+          runValidators: true,
+        }
+      );
 
-      // If payment is completed, update wallet and send notification
-      if (payment.status === "completed") {
+      // If no document was updated, it means either:
+      // 1. Payment not found (handled above)
+      // 2. Payment already processed by another request
+      if (!updatedPayment) {
+        // Check if payment exists but is already processed
+        const existingPayment = await Payment.findOne({ orderId });
+        if (existingPayment) {
+          return res.json({
+            success: true,
+            message: "Payment already processed",
+            data: {
+              orderId: existingPayment.orderId,
+              status: existingPayment.status,
+            },
+          });
+        } else {
+          return res.status(404).json({
+            success: false,
+            message: "Payment not found",
+          });
+        }
+      }
+
+      // If payment is completed and we successfully updated it, process wallet
+      if (shouldProcessWallet && updatedPayment.status === "completed") {
         try {
-          await this.updateWalletAfterPayment(payment);
+          // Since we used atomic update, this is the first and only completion
+          // No need to skip notification
           console.log(
-            `Updated wallet for payment ${orderId} and sent notification`
+            `🔔 Payment ${orderId} notification decision: skip=false (atomic update success)`
+          );
+
+          await this.updateWalletAfterPayment(updatedPayment, undefined, false);
+
+          console.log(
+            `Updated wallet for payment ${orderId} (notification sent for first completion)`
           );
         } catch (error) {
           console.error("Error updating wallet after payment:", error);
@@ -740,14 +835,16 @@ export class PaymentController {
         }
       }
 
-      console.log(`Updated payment ${orderId} to ${payment.status} status`);
+      console.log(
+        `Updated payment ${orderId} to ${updatedPayment.status} status`
+      );
 
       res.json({
         success: true,
-        message: `Payment status updated to ${payment.status}`,
+        message: `Payment status updated to ${updatedPayment.status}`,
         data: {
-          orderId: payment.orderId,
-          status: payment.status,
+          orderId: updatedPayment.orderId,
+          status: updatedPayment.status,
         },
       });
     } catch (error) {
@@ -764,11 +861,20 @@ export class PaymentController {
    */
   private async updateWalletAfterPayment(
     payment: any,
-    session?: mongoose.ClientSession
+    session?: mongoose.ClientSession,
+    skipNotification: boolean = false
   ) {
     try {
       if (payment.status !== "completed") {
         return false; // Only process completed payments
+      }
+
+      // Check if this payment has already been processed for wallet update
+      if (payment.walletProcessed) {
+        console.log(
+          `Payment ${payment.orderId} already processed for wallet update, skipping...`
+        );
+        return true; // Already processed, but return success
       }
 
       // Find or create wallet
@@ -840,9 +946,10 @@ export class PaymentController {
       }
 
       // Update payment to mark it as processed for wallet
+      // Mark payment as wallet processed to prevent duplicate processing
+      payment.walletProcessed = true;
       payment.metadata = {
         ...payment.metadata,
-        walletProcessed: true,
         processedAt: new Date(),
         balanceAfter: wallet.balance,
       };
@@ -854,7 +961,7 @@ export class PaymentController {
       }
 
       // Send notification for successful top-up
-      if (isTopup) {
+      if (isTopup && !skipNotification) {
         try {
           console.log(
             `🔔 Creating top-up notification for user ${payment.userId}, amount: ${payment.amount}`
@@ -869,6 +976,10 @@ export class PaymentController {
           console.error("❌ Error sending top-up notification:", error);
           // Don't fail the transaction for notification error
         }
+      } else if (isTopup && skipNotification) {
+        console.log(
+          `🔔 Skipping duplicate notification for payment ${payment.orderId}`
+        );
       }
 
       // ❌ XÓA PACKAGE PURCHASE NOTIFICATION - KHÔNG CẦN THIẾT

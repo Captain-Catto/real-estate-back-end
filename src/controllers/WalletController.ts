@@ -120,6 +120,22 @@ export class WalletController {
         });
       }
 
+      // Check if this payment has already been processed for wallet update
+      if (payment.walletProcessed) {
+        console.log(
+          `Payment ${orderId} already processed for wallet update, skipping...`
+        );
+        return res.status(200).json({
+          success: true,
+          message: "Payment already processed",
+          data: {
+            orderId,
+            alreadyProcessed: true,
+            currentBalance: wallet.balance,
+          },
+        });
+      }
+
       // Update wallet based on transaction type
       if (type === "topup") {
         // Add money to wallet
@@ -163,10 +179,10 @@ export class WalletController {
       // Save wallet changes
       await wallet.save();
 
-      // Update payment metadata with wallet transaction info
+      // Mark payment as wallet processed to prevent duplicate processing
+      payment.walletProcessed = true;
       payment.metadata = {
         ...payment.metadata,
-        walletProcessed: true,
         processedAt: new Date(),
         balanceAfter: wallet.balance,
       };

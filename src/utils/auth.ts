@@ -6,6 +6,8 @@ export interface TokenPayload {
   username: string;
   email: string;
   role: string;
+  exp?: number; // JWT expiration timestamp
+  iat?: number; // JWT issued at timestamp
 }
 
 export const generateAccessToken = (user: IUser): string => {
@@ -37,10 +39,38 @@ export const generateRefreshToken = (user: IUser): string => {
 };
 
 export const verifyAccessToken = (token: string): TokenPayload => {
-  return jwt.verify(
-    token,
-    process.env.JWT_SECRET || "default-secret"
-  ) as TokenPayload;
+  try {
+    console.log(`🔍 JWT verification debug:`, {
+      tokenLength: token.length,
+      tokenStart: token.substring(0, 20),
+      secret: process.env.JWT_SECRET ? "Set" : "Using default",
+      secretLength: (process.env.JWT_SECRET || "default-secret").length,
+    });
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "default-secret"
+    ) as TokenPayload;
+
+    console.log(`✅ JWT verification successful:`, {
+      userId: decoded.userId,
+      email: decoded.email,
+      role: decoded.role,
+      exp: decoded.exp,
+      iat: decoded.iat,
+    });
+
+    return decoded;
+  } catch (error) {
+    console.log(`❌ JWT verification failed:`, {
+      error: error instanceof Error ? error.message : "Unknown error",
+      tokenPreview: token.substring(0, 20) + "...",
+      secretStatus: process.env.JWT_SECRET
+        ? "Environment variable set"
+        : "Using default",
+    });
+    throw error;
+  }
 };
 
 export const verifyRefreshToken = (token: string): TokenPayload => {

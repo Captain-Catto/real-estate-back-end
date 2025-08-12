@@ -7,8 +7,9 @@ export class CategoryController {
   async getCategories(req: Request, res: Response) {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
-      const skip = (page - 1) * limit;
+      const limitParam = req.query.limit as string;
+      const limit = limitParam === "all" ? null : parseInt(limitParam) || 10;
+      const skip = limit ? (page - 1) * limit : 0;
 
       // Lấy filter từ query params
       const filter: any = {};
@@ -21,11 +22,14 @@ export class CategoryController {
       // Đếm tổng số danh mục theo filter
       const totalCategories = await Category.countDocuments(filter);
 
-      // Lấy danh sách danh mục với phân trang
-      const categories = await Category.find(filter, { __v: 0 })
-        .sort({ name: 1 })
-        .skip(skip)
-        .limit(limit);
+      // Lấy danh sách danh mục với phân trang (hoặc tất cả nếu limit=all)
+      let query = Category.find(filter, { __v: 0 }).sort({ order: 1, name: 1 });
+
+      if (limit) {
+        query = query.skip(skip).limit(limit);
+      }
+
+      const categories = await query;
 
       res.json({
         success: true,
@@ -33,9 +37,9 @@ export class CategoryController {
           categories,
           pagination: {
             currentPage: page,
-            totalPages: Math.ceil(totalCategories / limit),
+            totalPages: limit ? Math.ceil(totalCategories / limit) : 1,
             totalItems: totalCategories,
-            itemsPerPage: limit,
+            itemsPerPage: limit || totalCategories,
           },
         },
       });

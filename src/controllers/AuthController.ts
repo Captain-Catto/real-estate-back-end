@@ -1,9 +1,11 @@
 import { Request, Response } from "express";
-import { User } from "../models";
+import bcrypt from "bcrypt";
+import { User, BlacklistedToken } from "../models";
 import {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
+  verifyAccessToken,
 } from "../utils/auth";
 import { AuthenticatedRequest } from "../middleware";
 
@@ -57,9 +59,10 @@ export class AuthController {
       const accessToken = generateAccessToken(user);
       const refreshToken = generateRefreshToken(user);
 
-      // Save refresh token to user
-      user.refreshTokens.push(refreshToken);
-      await user.save();
+      // Save refresh token to user using atomic operation
+      await User.findByIdAndUpdate(user._id, {
+        $push: { refreshTokens: refreshToken },
+      });
 
       // Set refresh token as httpOnly cookie (giống như login)
       res.cookie("refreshToken", refreshToken, {
@@ -120,9 +123,10 @@ export class AuthController {
       const accessToken = generateAccessToken(user);
       const refreshToken = generateRefreshToken(user);
 
-      // Save refresh token to user
-      user.refreshTokens.push(refreshToken);
-      await user.save();
+      // Save refresh token to user using atomic operation
+      await User.findByIdAndUpdate(user._id, {
+        $push: { refreshTokens: refreshToken },
+      });
 
       // Set refresh token as httpOnly cookie
       res.cookie("refreshToken", refreshToken, {
@@ -178,12 +182,26 @@ export class AuthController {
         const newAccessToken = generateAccessToken(user);
         const newRefreshToken = generateRefreshToken(user);
 
-        // Replace old refresh token with new one
-        user.refreshTokens = user.refreshTokens.filter(
-          (token) => token !== refreshToken
+        // Replace old refresh token with new one using atomic operation
+        const updatedUser = await User.findByIdAndUpdate(
+          decoded.userId,
+          {
+            $pull: { refreshTokens: refreshToken },
+          },
+          { new: true }
         );
-        user.refreshTokens.push(newRefreshToken);
-        await user.save();
+
+        if (!updatedUser) {
+          return res.status(403).json({
+            success: false,
+            message: "Invalid refresh token",
+          });
+        }
+
+        // Add new refresh token
+        await User.findByIdAndUpdate(decoded.userId, {
+          $push: { refreshTokens: newRefreshToken },
+        });
 
         // Set cookie mới với refresh token mới
         res.cookie("refreshToken", newRefreshToken, {
@@ -230,6 +248,12 @@ export class AuthController {
 
   async logout(req: Request, res: Response) {
     try {
+      // Lấy access token để blacklist
+      const authHeader = req.header("Authorization");
+      const accessToken = authHeader?.startsWith("Bearer ")
+        ? authHeader.substring(7)
+        : null;
+
       // Lấy refresh token từ cookie
       const refreshToken = req.cookies.refreshToken;
 
@@ -245,14 +269,28 @@ export class AuthController {
         const decoded = verifyRefreshToken(refreshToken);
         const userId = decoded.userId;
 
-        // Find user and remove refresh token
-        const user = await User.findById(userId);
-        if (user) {
-          user.refreshTokens = user.refreshTokens.filter(
-            (token) => token !== refreshToken
-          );
-          await user.save();
+        // Blacklist access token nếu có
+        if (accessToken) {
+          try {
+            const accessDecoded = verifyAccessToken(accessToken);
+            if (accessDecoded.exp) {
+              await BlacklistedToken.create({
+                token: accessToken,
+                expiresAt: new Date(accessDecoded.exp * 1000), // Convert từ Unix timestamp
+              });
+            }
+          } catch (error) {
+            // Không cần fail logout nếu access token invalid
+            console.log(
+              "Access token invalid during logout, skipping blacklist"
+            );
+          }
         }
+
+        // Find user and remove refresh token using atomic operation
+        await User.findByIdAndUpdate(userId, {
+          $pull: { refreshTokens: refreshToken },
+        });
 
         // Clear cookie
         res.clearCookie("refreshToken", {
@@ -292,6 +330,12 @@ export class AuthController {
   async logoutAll(req: Request, res: Response) {
     // Đổi từ AuthenticatedRequest thành Request
     try {
+      // Lấy access token để blacklist
+      const authHeader = req.header("Authorization");
+      const accessToken = authHeader?.startsWith("Bearer ")
+        ? authHeader.substring(7)
+        : null;
+
       // Lấy refresh token từ cookie
       const refreshToken = req.cookies.refreshToken;
 
@@ -307,12 +351,27 @@ export class AuthController {
         const decoded = verifyRefreshToken(refreshToken);
         const userId = decoded.userId;
 
-        // Find user and remove ALL refresh tokens
-        const user = await User.findById(userId);
-        if (user) {
-          user.refreshTokens = []; // Clear tất cả refresh tokens
-          await user.save();
+        // Blacklist current access token nếu có
+        if (accessToken) {
+          try {
+            const accessDecoded = verifyAccessToken(accessToken);
+            if (accessDecoded.exp) {
+              await BlacklistedToken.create({
+                token: accessToken,
+                expiresAt: new Date(accessDecoded.exp * 1000),
+              });
+            }
+          } catch (error) {
+            console.log(
+              "Access token invalid during logoutAll, skipping blacklist"
+            );
+          }
         }
+
+        // Find user and remove ALL refresh tokens using atomic operation
+        await User.findByIdAndUpdate(userId, {
+          $set: { refreshTokens: [] },
+        });
 
         // Clear cookie hiện tại
         res.clearCookie("refreshToken", {
@@ -448,13 +507,17 @@ export class AuthController {
         });
       }
 
-      // Update password
-      user.password = newPassword;
+      // Hash the new password
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-      // Clear all refresh tokens to force re-login on all devices
-      user.refreshTokens = [];
-
-      await user.save();
+      // Update password and clear all refresh tokens using atomic operation
+      await User.findByIdAndUpdate(user._id, {
+        $set: {
+          password: hashedPassword,
+          refreshTokens: [],
+        },
+      });
 
       res.json({
         success: true,

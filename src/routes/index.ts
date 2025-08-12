@@ -33,6 +33,8 @@ import { DeveloperController } from "../controllers/DeveloperController";
 import { NotificationController } from "../controllers/NotificationController";
 import { NewsCategoryController } from "../controllers/NewsCategoryController";
 import { ContactController } from "../controllers/ContactController";
+import customerContactRoutes from "./customerContact";
+import dashboardRoutes from "./dashboard";
 
 const router = Router();
 const indexController = new IndexController();
@@ -149,6 +151,13 @@ export function setRoutes(app: Express) {
     "/:postId/resubmit",
     authenticateUser,
     postController.resubmitPost.bind(postController)
+  );
+
+  // Delete post (soft delete)
+  postRouter.delete(
+    "/:postId",
+    authenticateUser,
+    postController.deletePost.bind(postController)
   );
 
   // chỉnh sửa trạng thái bài viết
@@ -929,6 +938,9 @@ export function setRoutes(app: Express) {
     HeaderSettingsController.toggleMenuStatus
   );
 
+  // ===== CUSTOMER CONTACT ROUTES =====
+  app.use("/api/customer-contacts", customerContactRoutes);
+
   // ===== NEWS ROUTES =====
   const newsRouter = Router();
   app.use("/api/news", newsRouter);
@@ -1128,4 +1140,7 @@ export function setRoutes(app: Express) {
     requirePermission("edit_settings"),
     ContactController.updateContactLogNote
   );
+
+  // Dashboard routes
+  app.use("/api/dashboard", dashboardRoutes);
 }

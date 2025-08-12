@@ -83,13 +83,13 @@ export class NotificationController {
   static async markAsRead(req: AuthenticatedRequest, res: Response) {
     try {
       const userId = req.user?.userId;
-      const { notificationId } = req.params;
+      const { id } = req.params; // Changed from notificationId to id
 
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      if (!mongoose.Types.ObjectId.isValid(notificationId)) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({
           success: false,
           message: "ID thông báo không hợp lệ",
@@ -98,7 +98,7 @@ export class NotificationController {
 
       const notification = await Notification.findOneAndUpdate(
         {
-          _id: new mongoose.Types.ObjectId(notificationId),
+          _id: new mongoose.Types.ObjectId(id),
           userId: new mongoose.Types.ObjectId(userId),
         },
         { read: true },

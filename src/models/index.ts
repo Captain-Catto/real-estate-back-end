@@ -13,6 +13,7 @@ export { default as UserPermission, IUserPermission } from "./UserPermission";
 export { Notification, INotification } from "./Notification";
 export { ISidebarConfig } from "./SidebarConfig";
 export { News, INews } from "./News";
+export { BlacklistedToken, IBlacklistedToken } from "./BlacklistedToken";
 export { NewsCategory, INewsCategory } from "./NewsCategory";
 export { HeaderMenu, IHeaderMenu, IDropdownItem } from "./HeaderMenu";
 export { default as ContactLog, IContactLog } from "./ContactLog";

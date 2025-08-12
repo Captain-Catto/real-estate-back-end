@@ -19,6 +19,7 @@ export interface IPayment extends Document {
   failedAt?: Date;
   cancelledAt?: Date;
   cancelReason?: string;
+  walletProcessed?: boolean; // Flag to prevent duplicate wallet processing
   metadata?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
@@ -96,6 +97,10 @@ const paymentSchema = new Schema<IPayment>(
     },
     cancelReason: {
       type: String,
+    },
+    walletProcessed: {
+      type: Boolean,
+      default: false,
     },
     metadata: {
       type: Schema.Types.Mixed,

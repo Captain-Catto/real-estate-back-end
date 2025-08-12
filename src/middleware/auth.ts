@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken, TokenPayload } from "../utils/auth";
 import UserPermission from "../models/UserPermission";
+import { BlacklistedToken } from "../models/BlacklistedToken";
 
 export interface AuthenticatedRequest extends Request {
   user?: TokenPayload;
@@ -39,6 +40,21 @@ export const authenticate = (options: AuthOptions = {}) => {
         ? authHeader.substring(7)
         : cookieToken;
 
+      // Debug logging for development
+      if (process.env.NODE_ENV === "development") {
+        console.log("🔍 Auth middleware debug:", {
+          url: req.url,
+          method: req.method,
+          hasAuthHeader: !!authHeader,
+          authHeaderValue: authHeader
+            ? `${authHeader.substring(0, 20)}...`
+            : null,
+          hasCookieToken: !!cookieToken,
+          hasToken: !!token,
+          tokenPreview: token ? `${token.substring(0, 20)}...` : null,
+        });
+      }
+
       // If no authentication is required and no token present, continue
       if (!requireAuth && !token) {
         return next();
@@ -57,8 +73,30 @@ export const authenticate = (options: AuthOptions = {}) => {
 
       // Verify token if present
       if (token) {
-        const decoded = verifyAccessToken(token);
-        req.user = decoded;
+        try {
+          // Check if token is blacklisted
+          const blacklistedToken = await BlacklistedToken.findOne({ token });
+          if (blacklistedToken) {
+            return res.status(401).json({
+              success: false,
+              message: "Token has been invalidated.",
+              code: "TOKEN_BLACKLISTED",
+            });
+          }
+
+          const decoded = verifyAccessToken(token);
+          req.user = decoded;
+        } catch (error) {
+          console.log(
+            `🚫 Token verification failed:`,
+            error instanceof Error ? error.message : "Unknown error"
+          );
+          return res.status(401).json({
+            success: false,
+            message: "Invalid or expired token.",
+            code: "TOKEN_INVALID",
+          });
+        }
       }
 
       // Check admin role if required

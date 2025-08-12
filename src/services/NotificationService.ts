@@ -7,7 +7,12 @@ export interface CreateNotificationData {
   userId: string | mongoose.Types.ObjectId;
   title: string;
   message: string;
-  type: "PAYMENT" | "POST_PAYMENT" | "POST_APPROVED" | "POST_REJECTED"; // Chỉ giữ 4 loại cần thiết
+  type:
+    | "PAYMENT"
+    | "POST_PAYMENT"
+    | "POST_APPROVED"
+    | "POST_REJECTED"
+    | "SYSTEM"; // Thêm SYSTEM cho call back
   data?: any;
 }
 
@@ -246,9 +251,45 @@ export class NotificationService {
         reason,
         action: "post_rejected",
         actionButton: {
-          text: "Chỉnh sửa tin",
-          link: `/nguoi-dung/tin-dang/chinh-sua/${postId}`,
+          text: "Xem tin đăng",
+          link: `/nguoi-dung/quan-ly-tin-rao-ban-cho-thue`,
           style: "warning",
+        },
+      },
+    });
+  }
+
+  /**
+   * Notification khi có yêu cầu gọi lại
+   */
+  static async createCallBackRequestNotification(
+    userId: string | mongoose.Types.ObjectId,
+    postTitle: string,
+    requesterName: string,
+    requesterPhone: string,
+    requesterEmail?: string,
+    notes?: string
+  ): Promise<void> {
+    const message = `${requesterName} đã yêu cầu bạn gọi lại về tin đăng "${postTitle}". Số điện thoại: ${requesterPhone}${
+      requesterEmail ? `, Email: ${requesterEmail}` : ""
+    }${notes ? `. Ghi chú: ${notes}` : ""}`;
+
+    await this.createNotification({
+      userId,
+      title: "📞 Yêu cầu gọi lại",
+      message,
+      type: "SYSTEM",
+      data: {
+        postTitle,
+        requesterName,
+        requesterPhone,
+        requesterEmail,
+        notes,
+        action: "call_back_request",
+        actionButton: {
+          text: "Quản lý liên hệ",
+          link: "/nguoi-dung/quan-ly-khach-hang",
+          style: "primary",
         },
       },
     });
