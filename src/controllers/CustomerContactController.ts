@@ -9,9 +9,16 @@ import { AuthenticatedRequest } from "../middleware/auth";
 export class CustomerContactController {
   // User tạo yêu cầu gọi lại
   static async createCallBackRequest(req: AuthenticatedRequest, res: Response) {
+    console.log("bắt đầu việc tạo call back");
     try {
       const { postId, notes } = req.body;
       const userId = req.user?.userId;
+
+      console.log("🔍 createCallBackRequest called with:", {
+        postId,
+        notes,
+        userId,
+      });
 
       if (!userId) {
         return res.status(401).json({
@@ -64,6 +71,8 @@ export class CustomerContactController {
         status: "pending",
         notes: notes || "",
       });
+
+      console.log("đã tạo contact");
 
       await newContact.save();
 

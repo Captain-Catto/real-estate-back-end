@@ -19,6 +19,16 @@ export class CategoryController {
         filter.isProject = req.query.isProject === "true";
       }
 
+      // Nếu có tham số status trong query
+      if (req.query.status) {
+        filter.isActive = req.query.status === "active";
+        console.log(
+          `🔍 Filtering categories by status: ${req.query.status} (isActive: ${filter.isActive})`
+        );
+      }
+
+      console.log(`🔍 Category filter:`, filter);
+
       // Đếm tổng số danh mục theo filter
       const totalCategories = await Category.countDocuments(filter);
 
@@ -91,6 +101,7 @@ export class CategoryController {
   async getCategoryByIsProject(req: Request, res: Response) {
     try {
       const { isProject } = req.params;
+      const { status } = req.query;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
       const skip = (page - 1) * limit;
@@ -98,10 +109,25 @@ export class CategoryController {
       // Chuyển đổi từ string sang boolean
       const isProjectBool = isProject === "true";
 
-      // Đếm tổng số danh mục theo isProject
-      const totalCategories = await Category.countDocuments({
-        isProject: isProjectBool,
-      });
+      // Build filter object
+      const filter: any = { isProject: isProjectBool };
+
+      // Add status filter if provided
+      if (status) {
+        filter.isActive = status === "active";
+        console.log(
+          `🔍 getCategoryByIsProject: Filtering categories by status: ${status} (isActive: ${filter.isActive})`
+        );
+      }
+
+      console.log(`🔍 getCategoryByIsProject filter:`, filter);
+
+      // Đếm tổng số danh mục theo filter
+      const totalCategories = await Category.countDocuments(filter);
+
+      console.log(
+        `📋 getCategoryByIsProject: Found ${totalCategories} categories with filter`
+      );
 
       // Kiểm tra nếu không tìm thấy kết quả nào
       if (totalCategories === 0) {
@@ -119,11 +145,20 @@ export class CategoryController {
         });
       }
 
-      // Tìm tất cả category có isProject = true/false với phân trang
-      const categories = await Category.find({ isProject: isProjectBool })
+      // Tìm tất cả category theo filter với phân trang
+      const categories = await Category.find(filter)
         .sort({ name: 1 })
         .skip(skip)
         .limit(limit);
+
+      console.log(
+        `📋 getCategoryByIsProject: Returning ${categories.length} categories after filtering`
+      );
+      categories.forEach((cat) => {
+        console.log(
+          `  - ${cat.name} (${cat.slug}) - isActive: ${cat.isActive}`
+        );
+      });
 
       res.json({
         success: true,
@@ -147,10 +182,27 @@ export class CategoryController {
   async getAllCategoriesByIsProject(req: Request, res: Response) {
     try {
       const { isProject } = req.params;
+      const { status } = req.query;
       const isProjectBool = isProject === "true";
 
-      const categories = await Category.find({ isProject: isProjectBool }).sort(
-        { name: 1 }
+      // Build filter object
+      const filter: any = { isProject: isProjectBool };
+
+      // Add status filter if provided
+      if (status) {
+        filter.isActive = status === "active";
+        console.log(
+          `🔍 Filtering categories by status: ${status} (isActive: ${filter.isActive})`
+        );
+      }
+
+      console.log(`🔍 Category filter:`, filter);
+
+      const categories = await Category.find(filter).sort({ name: 1 });
+
+      console.log(
+        `📋 Found ${categories.length} categories with filter:`,
+        filter
       );
 
       if (categories.length === 0) {

@@ -2,26 +2,11 @@
   "name": "my-backend-app",
   "version": "1.0.0",
   "description": "A backend application built with TypeScript and Express.",
-  "main": "src/app.ts",
+  "main": "dist/app.js",
   "scripts": {
-    "start": "ts-node src/app.ts",
-    "dev": "nodemon src/app.ts",
-    "build": "tsc",
-    "import-location": "ts-node scripts/importLocation.ts",
-    "import-locations": "ts-node src/scripts/importLocations.ts",
-    "seed-categories": "ts-node scripts/seedCategories.ts",
-    "seed-packages": "ts-node scripts/seedPackages.ts",
-    "seed-sidebar": "ts-node scripts/seedSidebarConfig.ts",
-    "check-packages": "ts-node scripts/checkPackages.ts",
-    "test-package-api": "ts-node scripts/testPackageAPI.ts",
-    "test-update-package": "ts-node scripts/testUpdatePackage.ts",
-    "test-notifications": "ts-node scripts/testNotificationSystem.ts",
-    "test-notifications-simple": "ts-node scripts/testNotificationSimple.ts",
-    "create-admin": "ts-node scripts/createAdminUser.ts",
-    "seed:areas-prices": "ts-node scripts/seedAreasAndPrices.ts",
-    "update-avatars": "ts-node src/scripts/updateUsersAvatar.ts",
-    "update-sidebar-permissions": "cd scripts && npm run update-permissions",
-    "update-sidebar-role-permissions": "cd scripts && npm run update-role-permissions"
+    "start": "node dist/app.js",
+    "build": "npx tsc",
+    "dev": "ts-node src/app.ts"
   },
   "dependencies": {
     "@ai-sdk/groq": "^1.2.9",
@@ -44,7 +29,10 @@
     "multer-s3": "^2.10.0",
     "node-cron": "^4.2.1",
     "uuid": "^11.1.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "typescript": "^4.5.2",
+    "ts-node": "^10.4.0",
+    "@types/node": "^24.0.3"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.0",
@@ -54,10 +42,7 @@
     "@types/jsonwebtoken": "^9.0.0",
     "@types/multer": "^1.4.13",
     "@types/multer-s3": "^3.0.3",
-    "@types/node": "^24.0.3",
-    "nodemon": "^3.1.10",
-    "ts-node": "^10.4.0",
-    "typescript": "^4.5.2"
+    "nodemon": "^3.1.10"
   },
   "license": "MIT"
 }

@@ -11,7 +11,7 @@ import { paymentScheduler } from "./services/paymentScheduler";
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8081;
 
 // MongoDB connection
 mongoose
@@ -33,7 +33,9 @@ mongoose
 // Middleware setup
 app.use(
   cors({
-    origin: "http://localhost:3000", // Chỉ định cụ thể origin
+    origin: process.env.FRONTEND_URL
+      ? process.env.FRONTEND_URL.split(",")
+      : ["http://localhost:3000", "http://127.0.0.1:3000"], // Frontend origins
     credentials: true, // Cho phép gửi cookies
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
