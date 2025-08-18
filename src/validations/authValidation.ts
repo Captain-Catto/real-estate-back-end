@@ -9,14 +9,9 @@ import {
 
 // Register validation
 export const registerSchema = z.object({
-  fullName: vietnameseNameSchema,
   email: emailSchema,
   password: passwordSchema,
-  phone: phoneSchema,
   role: z.enum(["user", "admin", "employee"]).optional().default("user"),
-  agreeToTerms: z
-    .boolean()
-    .refine((val) => val === true, "Phải đồng ý với điều khoản sử dụng"),
 });
 
 // Login validation
@@ -56,12 +51,9 @@ export const resetPasswordSchema = z
 
 // Update profile validation
 export const updateProfileSchema = z.object({
-  fullName: vietnameseNameSchema.optional(),
-  phone: phoneSchema,
+  username: vietnameseNameSchema.optional(),
+  phoneNumber: phoneSchema,
   avatar: z.string().url("URL avatar không hợp lệ").optional(),
-  dateOfBirth: z.string().datetime("Ngày sinh không hợp lệ").optional(),
-  gender: z.enum(["male", "female", "other"]).optional(),
-  address: z.string().max(255, "Địa chỉ quá dài").optional(),
 });
 
 // Verify email validation

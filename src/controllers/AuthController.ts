@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
-import { User, BlacklistedToken } from "../models";
+import { User, BlacklistedToken, PasswordResetToken } from "../models";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -8,56 +8,74 @@ import {
   verifyAccessToken,
 } from "../utils/auth";
 import { AuthenticatedRequest } from "../middleware";
+import {
+  RegisterInput,
+  LoginInput,
+  ChangePasswordInput,
+  UpdateProfileInput,
+  ResetPasswordRequestInput,
+  ResetPasswordInput,
+} from "../validations";
+import emailService from "../utils/emailService";
+import crypto from "crypto";
 
 export class AuthController {
   async register(req: Request, res: Response) {
     try {
-      const { username, email, password } = req.body;
+      console.log(`🚀 [AuthController] Register endpoint hit`);
+      console.log(
+        `📝 [AuthController] Request body:`,
+        JSON.stringify(req.body, null, 2)
+      );
 
-      // Validate input
-      if (!username || !email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: "Username, email, and password are required",
-        });
-      }
-
-      if (password.length < 6) {
-        return res.status(400).json({
-          success: false,
-          message: "Password must be at least 6 characters long",
-        });
-      }
-
-      // kiểm tra password phải có 1 ký tự chữ hoa, 1 ký tự số
-      const passwordRegex = /^(?=.*[A-Z])(?=.*\d)[A-Za-z\d@$!%*?&]{6,}$/;
-      if (!passwordRegex.test(password)) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Password must contain at least one uppercase letter and one number",
-        });
-      }
+      // Data is already validated by Zod middleware
+      const { email, password, role } = req.body as RegisterInput;
+      console.log(`✅ [AuthController] Extracted data:`, { email, role });
 
       // Check if user already exists
-      const existingUser = await User.findOne({
-        $or: [{ email }, { username }],
-      });
+      console.log(
+        `🔍 [AuthController] Checking if user exists with email: ${email}`
+      );
+      const existingUser = await User.findOne({ email });
 
       if (existingUser) {
+        console.log(
+          `❌ [AuthController] User already exists:`,
+          existingUser.email
+        );
         return res.status(400).json({
           success: false,
-          message: "User with this email or username already exists",
+          message: "User with this email already exists",
         });
       }
 
-      // Create new user
-      const user = new User({ username, email, password });
+      console.log(
+        `✅ [AuthController] No existing user found, proceeding with registration`
+      );
+
+      // Create new user - use email as username since frontend only sends email/password
+      const user = new User({
+        username: email.split("@")[0], // Use email prefix as username
+        email,
+        password,
+        role: role || "user",
+      });
+      console.log(`👤 [AuthController] Creating new user:`, {
+        username: email.split("@")[0],
+        email,
+        role: role || "user",
+      });
+
       await user.save();
+      console.log(
+        `✅ [AuthController] User saved successfully with ID:`,
+        user._id
+      );
 
       // Generate tokens
       const accessToken = generateAccessToken(user);
       const refreshToken = generateRefreshToken(user);
+      console.log(`🔑 [AuthController] Tokens generated successfully`);
 
       // Save refresh token to user using atomic operation
       await User.findByIdAndUpdate(user._id, {
@@ -68,11 +86,12 @@ export class AuthController {
       res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Use 'lax' in development
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: "/",
       });
 
+      console.log(`🎉 [AuthController] Registration completed successfully`);
       res.status(201).json({
         success: true,
         message: "User registered successfully",
@@ -81,7 +100,7 @@ export class AuthController {
         },
       });
     } catch (error) {
-      console.error("Registration error:", error);
+      console.error(`❌ [AuthController] Registration error:`, error);
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -91,15 +110,8 @@ export class AuthController {
 
   async login(req: Request, res: Response) {
     try {
-      const { email, password } = req.body;
-
-      // Validate input
-      if (!email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: "Email and password are required",
-        });
-      }
+      // Data is already validated by Zod middleware
+      const { email, password } = req.body as LoginInput;
 
       // Find user by email
       const user = await User.findOne({ email });
@@ -132,7 +144,7 @@ export class AuthController {
       res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production", // HTTPS only in production
-        sameSite: "strict",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Use 'lax' in development
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: "/",
       });
@@ -155,10 +167,18 @@ export class AuthController {
 
   async refreshToken(req: Request, res: Response) {
     try {
+      console.log(`🔄 [AuthController] Refresh token endpoint hit`);
+      console.log(
+        `🍪 [AuthController] Cookies received:`,
+        Object.keys(req.cookies)
+      );
+
       // Lấy refresh token từ cookie thay vì body
       const refreshToken = req.cookies.refreshToken;
+      console.log(`🔑 [AuthController] Refresh token exists:`, !!refreshToken);
 
       if (!refreshToken) {
+        console.log(`❌ [AuthController] No refresh token found in cookies`);
         return res.status(401).json({
           success: false,
           message: "Refresh token is required",
@@ -166,12 +186,42 @@ export class AuthController {
       }
 
       try {
+        console.log(`🔍 [AuthController] Verifying refresh token...`);
         // Verify refresh token
         const decoded = verifyRefreshToken(refreshToken);
+        console.log(
+          `✅ [AuthController] Token decoded successfully for user:`,
+          decoded.userId
+        );
 
         // Find user and check if refresh token exists
         const user = await User.findById(decoded.userId);
-        if (!user || !user.refreshTokens.includes(refreshToken)) {
+        console.log(`👤 [AuthController] User found:`, !!user);
+
+        if (!user) {
+          console.log(
+            `❌ [AuthController] User not found for ID:`,
+            decoded.userId
+          );
+          return res.status(403).json({
+            success: false,
+            message: "Invalid refresh token",
+          });
+        }
+
+        console.log(
+          `🔄 [AuthController] User has ${user.refreshTokens.length} refresh tokens`
+        );
+        const tokenExists = user.refreshTokens.includes(refreshToken);
+        console.log(
+          `🔍 [AuthController] Current token exists in user tokens:`,
+          tokenExists
+        );
+
+        if (!tokenExists) {
+          console.log(
+            `❌ [AuthController] Refresh token not found in user's token list`
+          );
           return res.status(403).json({
             success: false,
             message: "Invalid refresh token",
@@ -179,10 +229,12 @@ export class AuthController {
         }
 
         // Generate new tokens
+        console.log(`🆕 [AuthController] Generating new tokens...`);
         const newAccessToken = generateAccessToken(user);
         const newRefreshToken = generateRefreshToken(user);
 
         // Replace old refresh token with new one using atomic operation
+        console.log(`🔄 [AuthController] Removing old refresh token...`);
         const updatedUser = await User.findByIdAndUpdate(
           decoded.userId,
           {
@@ -192,6 +244,9 @@ export class AuthController {
         );
 
         if (!updatedUser) {
+          console.log(
+            `❌ [AuthController] Failed to update user when removing old token`
+          );
           return res.status(403).json({
             success: false,
             message: "Invalid refresh token",
@@ -199,19 +254,25 @@ export class AuthController {
         }
 
         // Add new refresh token
+        console.log(`➕ [AuthController] Adding new refresh token...`);
         await User.findByIdAndUpdate(decoded.userId, {
           $push: { refreshTokens: newRefreshToken },
         });
 
         // Set cookie mới với refresh token mới
+        console.log(`🍪 [AuthController] Setting new refresh token cookie...`);
         res.cookie("refreshToken", newRefreshToken, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Use 'lax' in development
           maxAge: 7 * 24 * 60 * 60 * 1000,
           path: "/",
         });
 
+        console.log(
+          `✅ [AuthController] Refresh token successful for user:`,
+          user.email
+        );
         res.json({
           success: true,
           message: "Tokens refreshed successfully",
@@ -220,14 +281,17 @@ export class AuthController {
           },
         });
       } catch (error) {
+        console.log(`❌ [AuthController] Token verification failed:`, error);
         if (error instanceof Error) {
           if (error.name === "TokenExpiredError") {
+            console.log(`⏰ [AuthController] Refresh token expired`);
             return res.status(403).json({
               success: false,
               message: "Refresh token expired. Please login again.",
               code: "REFRESH_TOKEN_EXPIRED",
             });
           } else if (error.name === "JsonWebTokenError") {
+            console.log(`🔑 [AuthController] Invalid refresh token format`);
             return res.status(403).json({
               success: false,
               message: "Invalid refresh token",
@@ -238,7 +302,7 @@ export class AuthController {
         throw error;
       }
     } catch (error) {
-      console.error("Token refresh error:", error);
+      console.error("❌ [AuthController] Token refresh error:", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -296,7 +360,7 @@ export class AuthController {
         res.clearCookie("refreshToken", {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
           path: "/",
         });
 
@@ -309,7 +373,7 @@ export class AuthController {
         res.clearCookie("refreshToken", {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
           path: "/",
         });
 
@@ -377,7 +441,7 @@ export class AuthController {
         res.clearCookie("refreshToken", {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
           path: "/",
         });
 
@@ -390,7 +454,7 @@ export class AuthController {
         res.clearCookie("refreshToken", {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
           path: "/",
         });
 
@@ -456,34 +520,13 @@ export class AuthController {
   async changePassword(req: AuthenticatedRequest, res: Response) {
     try {
       const userId = req.user?.userId;
-      const { currentPassword, newPassword } = req.body;
+      // Data is already validated by Zod middleware
+      const { currentPassword, newPassword } = req.body as ChangePasswordInput;
 
       if (!userId) {
         return res.status(401).json({
           success: false,
           message: "User not authenticated",
-        });
-      }
-
-      // Validate input
-      if (!currentPassword || !newPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "Current password and new password are required",
-        });
-      }
-
-      if (newPassword.length < 6) {
-        return res.status(400).json({
-          success: false,
-          message: "New password must be at least 6 characters long",
-        });
-      }
-
-      if (currentPassword === newPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "New password must be different from current password",
         });
       }
 
@@ -503,7 +546,7 @@ export class AuthController {
       if (!isCurrentPasswordValid) {
         return res.status(400).json({
           success: false,
-          message: "Current password is incorrect",
+          message: "Mật khẩu hiện tại không đúng",
         });
       }
 
@@ -534,29 +577,28 @@ export class AuthController {
   }
 
   async updateProfile(req: AuthenticatedRequest, res: Response) {
-    console.log("=== UPDATE PROFILE ENDPOINT HIT ===");
-    console.log("Request method:", req.method);
-    console.log("Request URL:", req.url);
-    console.log("Request headers:", req.headers);
+    console.log("🚀 [AuthController] UPDATE PROFILE endpoint hit");
+    console.log("📝 [AuthController] Request method:", req.method);
+    console.log("📝 [AuthController] Request URL:", req.url);
+    console.log(
+      "📦 [AuthController] Request body:",
+      JSON.stringify(req.body, null, 2)
+    );
     try {
       const userId = req.user?.userId;
-      const { username, email, phoneNumber, avatar } = req.body;
+      const { username, phoneNumber, avatar } = req.body as UpdateProfileInput;
 
-      console.log("Update profile request:", req.body);
-      console.log("Authenticated user ID:", userId);
+      console.log("✅ [AuthController] Extracted data:", {
+        username,
+        phoneNumber,
+        avatar,
+      });
+      console.log("👤 [AuthController] Authenticated user ID:", userId);
 
       if (!userId) {
         return res.status(401).json({
           success: false,
           message: "User not authenticated",
-        });
-      }
-
-      // Check if someone is trying to update email
-      if (email) {
-        return res.status(400).json({
-          success: false,
-          message: "Email cannot be changed for security reasons",
         });
       }
 
@@ -656,11 +698,28 @@ export class AuthController {
       }
 
       // Update user
+      console.log(
+        "📝 [AuthController] Update fields to apply:",
+        JSON.stringify(updateFields, null, 2)
+      );
       const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
         new: true,
         runValidators: true,
       }).select("-password -refreshTokens");
-      console.log("Updated user:", updatedUser);
+      console.log(
+        "✅ [AuthController] Updated user:",
+        JSON.stringify(
+          {
+            id: updatedUser?._id,
+            username: updatedUser?.username,
+            email: updatedUser?.email,
+            phoneNumber: updatedUser?.phoneNumber,
+            avatar: updatedUser?.avatar,
+          },
+          null,
+          2
+        )
+      );
       if (!updatedUser) {
         return res.status(404).json({
           success: false,
@@ -786,6 +845,147 @@ export class AuthController {
       res.status(500).json({
         success: false,
         message: "Internal server error",
+      });
+    }
+  }
+
+  // POST /api/auth/forgot-password - Request password reset
+  async forgotPassword(req: Request, res: Response) {
+    try {
+      console.log(`🔑 [AuthController] Forgot password request started`);
+
+      // Data is already validated by Zod middleware
+      const { email } = req.body as ResetPasswordRequestInput;
+      console.log(
+        `📧 [AuthController] Processing forgot password for: ${email}`
+      );
+
+      // Find user by email
+      const user = await User.findOne({ email });
+      if (!user) {
+        console.log(`❌ [AuthController] User not found for email: ${email}`);
+        // Don't reveal if email exists or not for security
+        return res.json({
+          success: true,
+          message:
+            "Nếu email tồn tại trong hệ thống, bạn sẽ nhận được email hướng dẫn đặt lại mật khẩu",
+        });
+      }
+
+      console.log(`✅ [AuthController] User found: ${user._id}`);
+
+      // Generate reset token
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      console.log(
+        `🔐 [AuthController] Reset token generated: ${resetToken.substring(
+          0,
+          10
+        )}...`
+      );
+
+      // Delete any existing reset tokens for this user
+      await PasswordResetToken.deleteMany({ userId: user._id });
+      console.log(
+        `🗑️ [AuthController] Existing reset tokens deleted for user: ${user._id}`
+      );
+
+      // Create new reset token
+      const passwordResetToken = new PasswordResetToken({
+        userId: user._id,
+        token: resetToken,
+        expiresAt: new Date(Date.now() + 3600000), // 1 hour from now
+      });
+
+      await passwordResetToken.save();
+      console.log(`💾 [AuthController] Reset token saved to database`);
+
+      // Send reset email
+      console.log(`📤 [AuthController] Calling email service...`);
+      const emailSent = await emailService.sendPasswordResetEmail(
+        email,
+        resetToken
+      );
+      console.log(`📬 [AuthController] Email service returned: ${emailSent}`);
+
+      if (!emailSent) {
+        return res.status(500).json({
+          success: false,
+          message: "Không thể gửi email. Vui lòng thử lại sau",
+        });
+      }
+
+      console.log(
+        `✅ [AuthController] Forgot password process completed successfully`
+      );
+      res.json({
+        success: true,
+        message:
+          "Email hướng dẫn đặt lại mật khẩu đã được gửi đến địa chỉ email của bạn",
+      });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server, vui lòng thử lại sau",
+      });
+    }
+  }
+
+  // POST /api/auth/reset-password - Reset password with token
+  async resetPassword(req: Request, res: Response) {
+    try {
+      // Data is already validated by Zod middleware
+      const { token, newPassword } = req.body as ResetPasswordInput;
+
+      // Find valid reset token
+      const passwordResetToken = await PasswordResetToken.findOne({
+        token,
+        used: false,
+        expiresAt: { $gt: new Date() },
+      });
+
+      if (!passwordResetToken) {
+        return res.status(400).json({
+          success: false,
+          message: "Token không hợp lệ hoặc đã hết hạn",
+        });
+      }
+
+      // Find user
+      const user = await User.findById(passwordResetToken.userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      // Hash new password
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+      // Update user password and clear all refresh tokens
+      await User.findByIdAndUpdate(user._id, {
+        $set: {
+          password: hashedPassword,
+          refreshTokens: [], // Force logout from all devices
+        },
+      });
+
+      // Mark token as used
+      await PasswordResetToken.findByIdAndUpdate(passwordResetToken._id, {
+        $set: { used: true },
+      });
+
+      res.json({
+        success: true,
+        message: "Mật khẩu đã được đặt lại thành công. Vui lòng đăng nhập lại",
+      });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server, vui lòng thử lại sau",
       });
     }
   }

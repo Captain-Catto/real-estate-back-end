@@ -6,6 +6,18 @@ import {
   requireAnyPermission,
 } from "../middleware";
 import { uploadS3 } from "../utils/s3Upload";
+import {
+  validateBody,
+  validateParams,
+  validateQuery,
+  registerSchema,
+  loginSchema,
+  changePasswordSchema,
+  updateProfileSchema,
+  resetPasswordRequestSchema,
+  resetPasswordSchema,
+  userIdParamSchema,
+} from "../validations";
 import paymentSchedulerRoutes from "./paymentSchedulerRoutes";
 import sidebarRoutes from "./sidebarRoutes";
 import permissionRoutes from "./permissionRoutes";
@@ -54,15 +66,36 @@ const uploadController = new UploadController(); // New upload controller instan
 const packageController = new PackageController(); // New package controller instance
 
 export function setRoutes(app: Express) {
+  console.log("🚀 [Routes] Setting up routes...");
+
   // Trang chủ
   app.use("/", router);
   router.get("/", indexController.getIndex.bind(indexController));
 
   // Auth
   const authRouter = Router();
+  console.log("📝 [Routes] Setting up auth router at /api/auth");
   app.use("/api/auth", authRouter);
-  authRouter.post("/register", authController.register.bind(authController));
-  authRouter.post("/login", authController.login.bind(authController));
+
+  // Add route logging for register
+  authRouter.post(
+    "/register",
+    (req, res, next) => {
+      console.log(
+        `🌐 [Routes] POST /api/auth/register hit at ${new Date().toISOString()}`
+      );
+      console.log(`📋 [Routes] Headers:`, req.headers);
+      console.log(`📦 [Routes] Raw body:`, req.body);
+      next();
+    },
+    validateBody(registerSchema),
+    authController.register.bind(authController)
+  );
+  authRouter.post(
+    "/login",
+    validateBody(loginSchema),
+    authController.login.bind(authController)
+  );
   authRouter.post("/refresh", authController.refreshToken.bind(authController));
   authRouter.post("/logout", authController.logout.bind(authController));
   authRouter.post("/logout-all", authController.logoutAll.bind(authController));
@@ -74,11 +107,13 @@ export function setRoutes(app: Express) {
   authRouter.put(
     "/profile",
     authenticateUser,
+    validateBody(updateProfileSchema),
     authController.updateProfile.bind(authController)
   );
   authRouter.put(
     "/change-password",
     authenticateUser,
+    validateBody(changePasswordSchema),
     authController.changePassword.bind(authController)
   );
   authRouter.delete(
@@ -87,11 +122,24 @@ export function setRoutes(app: Express) {
     authController.deleteAccount.bind(authController)
   );
 
+  // Password Reset Routes
+  authRouter.post(
+    "/forgot-password",
+    validateBody(resetPasswordRequestSchema),
+    authController.forgotPassword.bind(authController)
+  );
+  authRouter.post(
+    "/reset-password",
+    validateBody(resetPasswordSchema),
+    authController.resetPassword.bind(authController)
+  );
+
   // User public routes
   const userRouter = Router();
   app.use("/api/users", userRouter);
   userRouter.get(
     "/public/:userId",
+    validateParams(userIdParamSchema),
     authController.getUserPublicInfo.bind(authController)
   );
 
