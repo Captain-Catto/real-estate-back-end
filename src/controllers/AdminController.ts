@@ -9,6 +9,7 @@ import { AuthenticatedRequest } from "../middleware";
 import { NotificationService } from "../services/NotificationService";
 import { Package } from "../models/Package";
 import UserPermission from "../models/UserPermission";
+import { adminUpdateUserSchema } from "../validations/userValidation";
 
 interface AdminStats {
   totalPosts: number;
@@ -149,6 +150,19 @@ export const AdminController = {
   getRecentActivities: async (req: Request, res: Response) => {
     try {
       const limit = parseInt(req.query.limit as string) || 10;
+      const page = parseInt(req.query.page as string) || 1;
+      const skip = (page - 1) * limit;
+
+      // Get total count for pagination
+      const totalPostsCount = await Post.countDocuments({
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      });
+      const totalUsersCount = await User.countDocuments({
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      });
+      const totalPaymentsCount = await Payment.countDocuments({
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      });
 
       // Get recent posts (last 24 hours)
       const recentPosts = await Post.find({
@@ -156,14 +170,14 @@ export const AdminController = {
       })
         .populate("author", "username email")
         .sort({ createdAt: -1 })
-        .limit(limit);
+        .limit(limit * 2); // Get more to have enough for pagination
 
       // Get recent users (last 24 hours)
       const recentUsers = await User.find({
         createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
       })
         .sort({ createdAt: -1 })
-        .limit(limit);
+        .limit(limit * 2); // Get more to have enough for pagination
 
       // Get recent payments (last 24 hours)
       const recentPayments = await Payment.find({
@@ -171,7 +185,7 @@ export const AdminController = {
       })
         .populate("userId", "username email")
         .sort({ createdAt: -1 })
-        .limit(limit);
+        .limit(limit * 2); // Get more to have enough for pagination
 
       // Combine and format activities
       const activities: ActivityItem[] = [];
@@ -218,15 +232,26 @@ export const AdminController = {
         });
       });
 
-      // Sort by time and limit
+      // Sort by time and apply pagination
       activities.sort(
         (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()
       );
-      const limitedActivities = activities.slice(0, limit);
+
+      const totalActivities = activities.length;
+      const paginatedActivities = activities.slice(skip, skip + limit);
+      const totalPages = Math.ceil(totalActivities / limit);
 
       res.json({
         success: true,
-        data: limitedActivities,
+        data: paginatedActivities,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems: totalActivities,
+          itemsPerPage: limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
+        },
       });
     } catch (error) {
       console.error("Error fetching recent activities:", error);
@@ -246,7 +271,7 @@ export const AdminController = {
         .populate("author", "username email")
         .sort({ views: -1 })
         .limit(limit)
-        .select("title views status author createdAt");
+        .select("title views status author createdAt type location");
 
       const formattedPosts = topPosts.map((post) => {
         const populatedPost = post as any; // Type assertion for populated fields
@@ -257,6 +282,8 @@ export const AdminController = {
           status: post.status,
           author: populatedPost.author?.username || "Unknown",
           createdAt: post.createdAt,
+          type: post.type || "ban",
+          location: post.location,
         };
       });
 
@@ -441,6 +468,69 @@ export const AdminController = {
     }
   },
 
+  // POST /api/admin/users - Create new user
+  createUser: async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const currentUserId = req.user?.userId;
+      const { email, password, role } = req.body;
+
+      // Check if user with email already exists
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          message: "Email đã được sử dụng",
+        });
+      }
+
+      // Create new user (similar to regular registration)
+      const newUser = new User({
+        username: email, // Use email as username
+        email,
+        password,
+        role: role || "user",
+        status: "active",
+      });
+
+      await newUser.save();
+
+      // Log the creation
+      console.log(`📝 [AdminController] User created by admin ${currentUserId}:`, {
+        userId: newUser._id,
+        email: newUser.email,
+        role: newUser.role,
+        status: newUser.status,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Return user data without password (match existing user format)
+      const userResponse = {
+        _id: newUser._id,
+        id: newUser._id.toString(),
+        username: newUser.username,
+        email: newUser.email,
+        phoneNumber: newUser.phoneNumber,
+        role: newUser.role,
+        status: newUser.status,
+        isVerified: false, // Default for new users
+        createdAt: newUser.createdAt,
+        updatedAt: newUser.updatedAt,
+      };
+
+      res.status(201).json({
+        success: true,
+        message: "Tạo người dùng thành công",
+        data: { user: userResponse },
+      });
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).json({
+        success: false,
+        message: "Lỗi server khi tạo người dùng",
+      });
+    }
+  },
+
   // PATCH /api/admin/users/:id/status - Update user status
   updateUserStatus: async (req: AuthenticatedRequest, res: Response) => {
     try {
@@ -462,7 +552,7 @@ export const AdminController = {
         });
       }
 
-      if (!["active", "inactive", "banned"].includes(status)) {
+      if (!["active", "banned"].includes(status)) {
         return res.status(400).json({
           success: false,
           message: "Trạng thái không hợp lệ",
@@ -488,6 +578,13 @@ export const AdminController = {
 
       // Save old status for logging
       const oldStatus = user.status;
+
+      // If changing to banned, implement user blocking
+      if (status === "banned" && oldStatus !== "banned") {
+        // Clear all refresh tokens to force logout
+        user.refreshTokens = [];
+        console.log(`🚫 [AdminController] User ${user.email} blocked - all sessions invalidated`);
+      }
 
       user.status = status;
       await user.save();
@@ -576,8 +673,8 @@ export const AdminController = {
   updateUser: async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { id } = req.params;
-      const { username, email, phoneNumber, role, status } = req.body;
       const currentUserId = req.user?.userId;
+      const { username, email, phoneNumber, role, status } = req.body;
 
       const user = await User.findById(id);
 
@@ -626,7 +723,7 @@ export const AdminController = {
       if (username) updateData.username = username;
       if (email) updateData.email = email;
       if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
-      if (role && user.role !== "admin") updateData.role = role; // Don't allow changing admin role
+      if (role) updateData.role = role; // Allow admins to change any role including other admins
       if (status) updateData.status = status;
 
       const updatedUser = await User.findByIdAndUpdate(id, updateData, {

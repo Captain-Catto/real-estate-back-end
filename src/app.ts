@@ -4,9 +4,12 @@ import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import path from "path";
+import { createServer } from "http";
 import { setRoutes } from "./routes/index";
 import { requestLogger } from "./middleware/index";
 import { paymentScheduler } from "./services/paymentScheduler";
+import { PostExpiryService } from "./services/PostExpiryService";
+import { webSocketService } from "./services/WebSocketService";
 
 dotenv.config();
 
@@ -27,6 +30,11 @@ mongoose
     // Bắt đầu payment scheduler để tự động hủy giao dịch pending quá hạn
     paymentScheduler.start();
     console.log("Payment scheduler started");
+
+    // Bắt đầu post expiry scheduler để tự động cập nhật status expired posts
+    const postExpiryService = PostExpiryService.getInstance();
+    postExpiryService.startScheduler();
+    console.log("Post expiry scheduler started");
   })
   .catch((error) => console.error("MongoDB connection error:", error));
 
@@ -53,8 +61,15 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 // Initialize routes
 setRoutes(app);
 
-const server = app.listen(PORT, () => {
+// Create HTTP server
+const httpServer = createServer(app);
+
+// Initialize WebSocket service
+webSocketService.initialize(httpServer);
+
+const server = httpServer.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`WebSocket server is ready on ws://localhost:${PORT}`);
 });
 
 // Graceful shutdown

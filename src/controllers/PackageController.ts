@@ -312,4 +312,68 @@ export class PackageController {
       });
     }
   }
+
+  // PUT /api/admin/packages/display-orders - Cập nhật display order hàng loạt (admin only)
+  async updateDisplayOrders(req: AuthenticatedRequest, res: Response) {
+    try {
+      // Kiểm tra quyền admin
+      if (req.user?.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Forbidden: Admin only",
+        });
+      }
+
+      const { packages } = req.body; // Array of { id, displayOrder }
+
+      if (!Array.isArray(packages)) {
+        return res.status(400).json({
+          success: false,
+          message: "Packages must be an array",
+        });
+      }
+
+      // Validate package data
+      for (const pkg of packages) {
+        if (!pkg.id || typeof pkg.displayOrder !== 'number') {
+          return res.status(400).json({
+            success: false,
+            message: "Each package must have id and displayOrder",
+          });
+        }
+      }
+
+      // Update all packages with new display orders
+      const updatePromises = packages.map(({ id, displayOrder }) =>
+        Package.findOneAndUpdate(
+          { id }, 
+          { displayOrder },
+          { new: true }
+        )
+      );
+
+      const updatedPackages = await Promise.all(updatePromises);
+
+      // Check if any package was not found
+      const notFound = updatedPackages.filter(pkg => !pkg);
+      if (notFound.length > 0) {
+        return res.status(404).json({
+          success: false,
+          message: `Some packages were not found`,
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Display orders updated successfully",
+        data: { packages: updatedPackages },
+      });
+    } catch (error) {
+      console.error("Update display orders error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
 }

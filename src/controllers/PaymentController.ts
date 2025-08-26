@@ -17,6 +17,7 @@ import {
 import mongoose from "mongoose";
 import { Wallet } from "../models/Wallet";
 import { NotificationService } from "../services/NotificationService";
+import { webSocketService } from "../services/WebSocketService";
 
 export class PaymentController {
   /**
@@ -996,6 +997,48 @@ export class PaymentController {
       //     console.error("Error sending package purchase notification:", error);
       //   }
       // }
+
+      // 🔌 Emit WebSocket events for real-time wallet updates
+      try {
+        console.log(`🔌 Emitting WebSocket wallet update for user ${payment.userId}`);
+        
+        // Emit wallet balance update
+        webSocketService.emitWalletUpdate({
+          userId: payment.userId,
+          balance: wallet.balance,
+          totalIncome: wallet.totalIncome,
+          totalSpending: wallet.totalSpending,
+          bonusEarned: wallet.bonusEarned || 0,
+          lastTransaction: wallet.lastTransaction
+        });
+
+        // Emit transaction completed event
+        webSocketService.emitTransactionCompleted({
+          userId: payment.userId,
+          transaction: {
+            orderId: payment.orderId,
+            amount: payment.amount,
+            type: isTopup ? 'DEPOSIT' : 'PAYMENT',
+            status: 'COMPLETED',
+            description: payment.description
+          }
+        });
+
+        // Emit payment status change
+        webSocketService.emitPaymentStatusChange({
+          userId: payment.userId,
+          payment: {
+            orderId: payment.orderId,
+            status: 'completed',
+            amount: payment.amount
+          }
+        });
+
+        console.log(`✅ WebSocket events emitted successfully for payment ${payment.orderId}`);
+      } catch (error) {
+        console.error("❌ Error emitting WebSocket events:", error);
+        // Don't fail the transaction for WebSocket errors
+      }
 
       return true;
     } catch (error) {

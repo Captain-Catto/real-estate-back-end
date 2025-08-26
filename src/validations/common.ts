@@ -13,8 +13,31 @@ export const passwordSchema = z
 
 export const phoneSchema = z
   .string()
-  .regex(/^[0-9]{10,11}$/, "Số điện thoại phải có 10-11 chữ số")
-  .optional();
+  .optional()
+  .refine((val) => {
+    if (!val) return true; // Optional field
+    
+    // Clean phone number (remove spaces, dashes, parentheses)
+    const cleanPhone = val.replace(/[\s\-\(\)]/g, '');
+    
+    // Check if contains only digits and optional + at the beginning
+    if (!/^[\+]?[0-9]+$/.test(cleanPhone)) {
+      return false;
+    }
+
+    // Vietnamese phone number patterns
+    const vietnamesePatterns = [
+      // Mobile numbers (10-11 digits)
+      /^(0|\+84)[3-9][0-9]{8}$/,        // 03x, 05x, 07x, 08x, 09x
+      /^(84)[3-9][0-9]{8}$/,            // Without + prefix
+      
+      // Landline numbers (10-11 digits)  
+      /^(0|\+84)[2][0-9]{8,9}$/,        // 02x area codes
+      /^(84)[2][0-9]{8,9}$/,            // Without + prefix
+    ];
+
+    return vietnamesePatterns.some(pattern => pattern.test(cleanPhone));
+  }, "Số điện thoại không đúng định dạng Việt Nam (VD: 0901234567, +84901234567)");
 
 export const nameSchema = z
   .string()

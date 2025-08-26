@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken, TokenPayload } from "../utils/auth";
 import UserPermission from "../models/UserPermission";
 import { BlacklistedToken } from "../models/BlacklistedToken";
+import { User } from "../models/User";
 
 export interface AuthenticatedRequest extends Request {
   user?: TokenPayload;
@@ -40,21 +41,6 @@ export const authenticate = (options: AuthOptions = {}) => {
         ? authHeader.substring(7)
         : cookieToken;
 
-      // Debug logging for development
-      if (process.env.NODE_ENV === "development") {
-        console.log("🔍 Auth middleware debug:", {
-          url: req.url,
-          method: req.method,
-          hasAuthHeader: !!authHeader,
-          authHeaderValue: authHeader
-            ? `${authHeader.substring(0, 20)}...`
-            : null,
-          hasCookieToken: !!cookieToken,
-          hasToken: !!token,
-          tokenPreview: token ? `${token.substring(0, 20)}...` : null,
-        });
-      }
-
       // If no authentication is required and no token present, continue
       if (!requireAuth && !token) {
         return next();
@@ -86,6 +72,38 @@ export const authenticate = (options: AuthOptions = {}) => {
 
           const decoded = verifyAccessToken(token);
           req.user = decoded;
+
+          // Check if user is banned (only if authentication is required)
+          if (requireAuth || requireAdmin || requirePermissions.length > 0) {
+            console.log(
+              `🔍 Checking banned status for user: ${decoded.userId}`
+            );
+            const currentUser = await User.findById(decoded.userId);
+            console.log(
+              `👤 User found in DB:`,
+              currentUser
+                ? `${currentUser.email} - status: ${currentUser.status}`
+                : "Not found"
+            );
+
+            if (currentUser && currentUser.status === "banned") {
+              console.log(
+                `🚫 User ${currentUser.email} is BANNED - blocking access`
+              );
+              return res.status(403).json({
+                success: false,
+                message:
+                  "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.",
+                code: "USER_BANNED",
+              });
+            } else {
+              console.log(
+                `✅ User ${
+                  currentUser?.email || "unknown"
+                } is NOT banned - allowing access`
+              );
+            }
+          }
         } catch (error) {
           console.log(
             `🚫 Token verification failed:`,
@@ -177,10 +195,6 @@ export const authenticate = (options: AuthOptions = {}) => {
             message,
           });
         }
-
-        console.log(`✅ Permission granted for ${req.user?.email}`);
-        console.log(`   - Required: [${requirePermissions.join(", ")}]`);
-        console.log(`   - Access granted\n`);
       }
 
       next();

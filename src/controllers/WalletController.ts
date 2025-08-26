@@ -3,6 +3,7 @@ import { Wallet, Payment, User, Post } from "../models";
 import { AuthenticatedRequest } from "../middleware";
 import mongoose from "mongoose";
 import { NotificationService } from "../services/NotificationService";
+import { webSocketService } from "../services/WebSocketService";
 
 export class WalletController {
   /**
@@ -565,6 +566,38 @@ export class WalletController {
       } catch (error) {
         console.error("❌ Error sending post payment notification:", error);
         // Don't fail the transaction for notification error
+      }
+
+      // 🔌 Emit WebSocket events for real-time wallet updates
+      try {
+        console.log(`🔌 Emitting WebSocket wallet update for user ${userId}`);
+        
+        // Emit wallet balance update
+        webSocketService.emitWalletUpdate({
+          userId,
+          balance: wallet.balance,
+          totalIncome: wallet.totalIncome,
+          totalSpending: wallet.totalSpending,
+          bonusEarned: wallet.bonusEarned || 0,
+          lastTransaction: wallet.lastTransaction
+        });
+
+        // Emit transaction completed event
+        webSocketService.emitTransactionCompleted({
+          userId,
+          transaction: {
+            orderId: payment.orderId,
+            amount: payment.amount,
+            type: 'PAYMENT',
+            status: 'COMPLETED',
+            description: payment.description
+          }
+        });
+
+        console.log(`✅ WebSocket events emitted successfully for post payment ${orderId}`);
+      } catch (error) {
+        console.error("❌ Error emitting WebSocket events:", error);
+        // Don't fail the transaction for WebSocket errors
       }
 
       return res.status(200).json({

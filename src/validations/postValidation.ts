@@ -40,22 +40,17 @@ export const createPostSchema = z.object({
   }),
   title: z
     .string()
-    .min(10, "Tiêu đề phải có ít nhất 10 ký tự")
-    .max(200, "Tiêu đề không được quá 200 ký tự")
+    .min(30, "Tiêu đề phải có ít nhất 30 ký tự")
+    .max(150, "Tiêu đề không được quá 150 ký tự")
     .trim(),
   description: z
     .string()
-    .min(50, "Mô tả phải có ít nhất 50 ký tự")
-    .max(1500, "Mô tả không được quá 1500 ký tự")
+    .min(30, "Mô tả phải có ít nhất 30 ký tự")
+    .max(500, "Mô tả không được quá 500 ký tự")
     .trim(),
   price: z.number().min(0, "Giá phải lớn hơn hoặc bằng 0").optional(),
   location: locationSchema,
   category: mongoIdSchema,
-  tags: z
-    .array(z.string().trim())
-    .max(10, "Không được quá 10 tags")
-    .optional()
-    .default([]),
   images: z
     .array(z.string().url("URL hình ảnh không hợp lệ"))
     .min(1, "Phải có ít nhất 1 hình ảnh")

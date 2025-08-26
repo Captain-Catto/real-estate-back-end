@@ -33,6 +33,7 @@ export * from "./postValidation";
 export {
   updateUserProfileSchema,
   userSearchSchema,
+  adminUpdateUserSchema,
   banUserSchema,
   assignRoleSchema,
   updatePermissionsSchema,
@@ -42,6 +43,7 @@ export {
   notificationPreferencesSchema,
   type UpdateUserProfileInput,
   type UserSearchQuery,
+  type AdminUpdateUserInput,
   type BanUserInput,
   type AssignRoleInput,
   type UpdatePermissionsInput,
@@ -53,9 +55,7 @@ export {
 
 // Use auth's version for these common schemas
 export {
-  adminUpdateUserSchema,
   userIdParamSchema,
-  type AdminUpdateUserInput,
   type UserIdParam,
 } from "./authValidation";
 

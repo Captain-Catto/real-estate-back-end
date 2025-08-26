@@ -1,35 +1,40 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export interface IPost extends Document {
-  type: String; // bán, cho thuê
-  title: String;
-  description: String;
-  price: Number;
+  type: "ban" | "cho-thue"; // bán, cho thuê
+  title: string;
+  description: string;
+  price: number;
   location: {
-    province: String;
-    ward: String;
-    street?: String; // tuỳ chọn, vì có thể ng dùng ko muốn cung cấp
+    province: string;
+    ward: string;
+    street?: string; // tuỳ chọn, vì có thể ng dùng ko muốn cung cấp
   };
   category: mongoose.Types.ObjectId;
-  tags: [String];
-  author: { type: mongoose.Schema.Types.ObjectId; ref: "User" };
-  images: [String];
-  area: String;
-  legalDocs: String;
-  furniture: String;
-  bedrooms: Number;
-  bathrooms: Number;
-  floors: Number;
-  houseDirection: String;
-  balconyDirection: String;
-  roadWidth: String;
-  frontWidth: String;
-  packageId: String;
-  packageDuration: Number;
-  status: String; // pending, active, rejected, expired, inactive, deleted
-  priority?: String; // normal, premium, vip
-  package?: String; // normal, premium, vip
-  views: Number; // post view count
+  author: mongoose.Types.ObjectId;
+  images: string[];
+  area: number;
+  legalDocs: string;
+  furniture: string;
+  bedrooms: number;
+  bathrooms: number;
+  floors?: number;
+  houseDirection?: string;
+  balconyDirection?: string;
+  roadWidth?: string;
+  frontWidth?: string;
+  packageId?: string;
+  packageDuration?: number;
+  status:
+    | "pending"
+    | "active"
+    | "rejected"
+    | "expired"
+    | "inactive"
+    | "deleted";
+  priority?: "normal" | "premium" | "vip";
+  package?: "free" | "basic" | "premium" | "vip";
+  views: number; // post view count
   project?: mongoose.Types.ObjectId; // reference to Project
   createdAt: Date;
   updatedAt: Date;
@@ -38,11 +43,10 @@ export interface IPost extends Document {
   approvedBy?: mongoose.Types.ObjectId;
   rejectedAt?: Date;
   rejectedBy?: mongoose.Types.ObjectId;
-  rejectedReason?: String;
+  rejectedReason?: string;
   // Package expiry fields
   expiredAt?: Date; // Ngày hết hạn của post
-  originalPackageDuration?: Number; // Lưu duration gốc khi tạo post
-  // ... các trường khác
+  originalPackageDuration?: number; // Lưu duration gốc khi tạo post
 }
 
 const postSchema = new Schema<IPost>(
@@ -160,12 +164,6 @@ const postSchema = new Schema<IPost>(
       ref: "Category",
       required: true,
     },
-    tags: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
     author: {
       type: Schema.Types.ObjectId,
       ref: "User",

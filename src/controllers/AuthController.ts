@@ -91,19 +91,17 @@ export class AuthController {
         path: "/",
       });
 
-      console.log(`🎉 [AuthController] Registration completed successfully`);
       res.status(201).json({
         success: true,
-        message: "User registered successfully",
+        message: "Đăng ký người dùng thành công",
         data: {
           accessToken, // Chỉ trả access token, refresh token lưu trong cookie
         },
       });
     } catch (error) {
-      console.error(`❌ [AuthController] Registration error:`, error);
       res.status(500).json({
         success: false,
-        message: "Internal server error",
+        message: "Xảy ra lỗi trong quá trình đăng ký",
       });
     }
   }
@@ -118,7 +116,7 @@ export class AuthController {
       if (!user) {
         return res.status(401).json({
           success: false,
-          message: "Invalid email or password",
+          message: "Sai email hoặc password",
         });
       }
 
@@ -127,7 +125,15 @@ export class AuthController {
       if (!isMatch) {
         return res.status(401).json({
           success: false,
-          message: "Invalid email or password",
+          message: "Sai email hoặc password",
+        });
+      }
+
+      // Check if user is banned
+      if (user.status === "banned") {
+        return res.status(403).json({
+          success: false,
+          message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ 0901234567.",
         });
       }
 
@@ -225,6 +231,18 @@ export class AuthController {
           return res.status(403).json({
             success: false,
             message: "Invalid refresh token",
+          });
+        }
+
+        // Check if user is banned
+        if (user.status === "banned") {
+          console.log(
+            `🚫 [AuthController] User ${user.email} is banned, denying refresh token`
+          );
+          return res.status(403).json({
+            success: false,
+            message:
+              "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.",
           });
         }
 
@@ -808,9 +826,9 @@ export class AuthController {
   // Get public user info
   async getUserPublicInfo(req: Request, res: Response) {
     try {
-      const { userId } = req.params;
+      const { id } = req.params;
 
-      if (!userId) {
+      if (!id) {
         return res.status(400).json({
           success: false,
           message: "User ID is required",
@@ -818,7 +836,7 @@ export class AuthController {
       }
 
       // Find user with public info only
-      const user = await User.findById(userId).select(
+      const user = await User.findById(id).select(
         "username email phoneNumber createdAt avatar"
       );
 

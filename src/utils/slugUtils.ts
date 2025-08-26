@@ -246,6 +246,21 @@ export function buildSearchUrl(
 }
 
 /**
+ * Normalize Vietnamese text for search (remove accents and convert to lowercase)
+ */
+export function normalizeVietnameseForSearch(text: string): string {
+  if (!text) return "";
+  
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remove accents
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .trim();
+}
+
+/**
  * Extract search filters from URL search params
  */
 export function extractFiltersFromParams(searchParams: URLSearchParams): {

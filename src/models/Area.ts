@@ -25,7 +25,6 @@ const AreaSchema = new Schema<IArea>(
     slug: {
       type: String,
       required: true,
-      unique: true,
     },
     type: {
       type: String,
@@ -60,13 +59,16 @@ const AreaSchema = new Schema<IArea>(
 AreaSchema.index({ slug: "text", name: "text" });
 AreaSchema.index({ type: 1, order: 1 });
 
+// Index cho slug + type (không unique để cho phép "tat-ca" dùng chung)
+AreaSchema.index({ slug: 1, type: 1 });
+
 export const Area = mongoose.model<IArea>("Area", AreaSchema);
 
 // Data mẫu cho khoảng diện tích bất động sản
 export const propertyAreaRangeData = [
   {
     id: "property_all",
-    name: "Tất cả diện tích",
+    name: "Tất cả diện tích", 
     slug: "tat-ca",
     type: "property",
     minValue: 0,
@@ -77,7 +79,7 @@ export const propertyAreaRangeData = [
   {
     id: "property_1",
     name: "Dưới 30 m²",
-    slug: "duoi-30-m2",
+    slug: "duoi-30-m2", 
     type: "property",
     minValue: 0,
     maxValue: 30,
@@ -85,10 +87,10 @@ export const propertyAreaRangeData = [
     isActive: true,
   },
   {
-    id: "property_2",
+    id: "property_2", 
     name: "30 - 50 m²",
     slug: "30-50-m2",
-    type: "property",
+    type: "property", 
     minValue: 30,
     maxValue: 50,
     order: 2,
@@ -105,7 +107,7 @@ export const propertyAreaRangeData = [
     isActive: true,
   },
   {
-    id: "property_4",
+    id: "property_4", 
     name: "80 - 100 m²",
     slug: "80-100-m2",
     type: "property",
@@ -116,7 +118,7 @@ export const propertyAreaRangeData = [
   },
   {
     id: "property_5",
-    name: "100 - 150 m²",
+    name: "100 - 150 m²", 
     slug: "100-150-m2",
     type: "property",
     minValue: 100,
@@ -137,7 +139,7 @@ export const propertyAreaRangeData = [
   {
     id: "property_7",
     name: "200 - 250 m²",
-    slug: "200-250-m2",
+    slug: "200-250-m2", 
     type: "property",
     minValue: 200,
     maxValue: 250,
@@ -148,7 +150,7 @@ export const propertyAreaRangeData = [
     id: "property_8",
     name: "250 - 300 m²",
     slug: "250-300-m2",
-    type: "property",
+    type: "property", 
     minValue: 250,
     maxValue: 300,
     order: 8,
@@ -179,7 +181,7 @@ export const propertyAreaRangeData = [
 // Data mẫu cho khoảng diện tích dự án
 export const projectAreaRangeData = [
   {
-    id: "project_area_all",
+    id: "project_all",
     name: "Tất cả diện tích",
     slug: "tat-ca",
     type: "project",
@@ -189,9 +191,9 @@ export const projectAreaRangeData = [
     isActive: true,
   },
   {
-    id: "project_area_1",
+    id: "project_1", 
     name: "50 - 100 m²",
-    slug: "du-an-50-100-m2",
+    slug: "project-50-100-m2",
     type: "project",
     minValue: 50,
     maxValue: 100,
@@ -199,9 +201,9 @@ export const projectAreaRangeData = [
     isActive: true,
   },
   {
-    id: "project_area_2",
+    id: "project_2",
     name: "100 - 200 m²",
-    slug: "du-an-100-200-m2",
+    slug: "project-100-200-m2", 
     type: "project",
     minValue: 100,
     maxValue: 200,
@@ -209,9 +211,9 @@ export const projectAreaRangeData = [
     isActive: true,
   },
   {
-    id: "project_area_3",
-    name: "200 - 500 m²",
-    slug: "du-an-200-500-m2",
+    id: "project_3",
+    name: "200 - 500 m²", 
+    slug: "project-200-500-m2",
     type: "project",
     minValue: 200,
     maxValue: 500,
@@ -219,19 +221,19 @@ export const projectAreaRangeData = [
     isActive: true,
   },
   {
-    id: "project_area_4",
+    id: "project_4",
     name: "500 - 1.000 m²",
-    slug: "du-an-500-1000-m2",
-    type: "project",
+    slug: "project-500-1000-m2",
+    type: "project", 
     minValue: 500,
     maxValue: 1000,
     order: 4,
     isActive: true,
   },
   {
-    id: "project_area_5",
+    id: "project_5",
     name: "1.000 - 5.000 m²",
-    slug: "du-an-1000-5000-m2",
+    slug: "project-1000-5000-m2",
     type: "project",
     minValue: 1000,
     maxValue: 5000,
@@ -239,9 +241,9 @@ export const projectAreaRangeData = [
     isActive: true,
   },
   {
-    id: "project_area_6",
-    name: "5.000 - 10.000 m²",
-    slug: "du-an-5000-10000-m2",
+    id: "project_6",
+    name: "5.000 - 10.000 m²", 
+    slug: "project-5000-10000-m2",
     type: "project",
     minValue: 5000,
     maxValue: 10000,
@@ -249,9 +251,9 @@ export const projectAreaRangeData = [
     isActive: true,
   },
   {
-    id: "project_area_7",
+    id: "project_7",
     name: "Trên 10.000 m²",
-    slug: "du-an-tren-10000-m2",
+    slug: "project-tren-10000-m2",
     type: "project",
     minValue: 10000,
     maxValue: -1,

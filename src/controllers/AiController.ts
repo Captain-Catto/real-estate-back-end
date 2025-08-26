@@ -10,29 +10,80 @@ export class AiController {
     try {
       const propertyData = req.body;
 
+      // LOG: Ghi lại toàn bộ data nhận vào
+      console.log("=== AI GENERATE TITLE REQUEST ===");
+      console.log("Timestamp:", new Date().toISOString());
+      console.log("User ID:", (req as any).user?.userId || "Unknown");
+      console.log("Raw Request Body:", JSON.stringify(propertyData, null, 2));
+      console.log("Request Headers:", {
+        "content-type": req.headers["content-type"],
+        "user-agent": req.headers["user-agent"],
+      });
+
       if (
         !propertyData.type ||
         !propertyData.category ||
         !propertyData.location
       ) {
+        console.log("❌ VALIDATION FAILED - Missing required fields:");
+        console.log("- type:", !!propertyData.type);
+        console.log("- category:", !!propertyData.category);
+        console.log("- location:", !!propertyData.location);
+
         return res.status(400).json({
           success: false,
           message: "Thiếu thông tin bất động sản",
         });
       }
 
+      // LOG: Ghi lại data đã validated
+      console.log("✅ VALIDATION PASSED - Processed data:");
+      console.log("- Type:", propertyData.type);
+      console.log("- Category:", propertyData.category);
+      console.log("- Location:", JSON.stringify(propertyData.location));
+      console.log("- Area:", propertyData.area);
+      console.log("- Price:", propertyData.price);
+      console.log("- Currency:", propertyData.currency);
+      console.log("- Bedrooms:", propertyData.bedrooms);
+      console.log("- Bathrooms:", propertyData.bathrooms);
+      console.log("- House Direction:", propertyData.houseDirection);
+
       // Tạo prompt cho Groq
       const prompt = this.createTitlePrompt(propertyData);
 
+      // LOG: Ghi lại prompt được tạo
+      console.log("📝 GENERATED PROMPT:");
+      console.log(prompt);
+      console.log("Prompt length:", prompt.length);
+
       // Gọi API Groq để tạo tiêu đề
+      console.log("🤖 CALLING GROQ AI...");
+      const startTime = Date.now();
       const title = await this.callGroqAI(prompt);
+      const endTime = Date.now();
+
+      // LOG: Ghi lại kết quả
+      console.log("✨ AI RESPONSE:");
+      console.log("Generated title:", title);
+      console.log("Title length:", title.length);
+      console.log("Processing time:", endTime - startTime, "ms");
+      console.log("=== END AI GENERATE TITLE ===\n");
 
       res.json({
         success: true,
         title,
       });
     } catch (error) {
-      console.error("Lỗi khi tạo tiêu đề:", error);
+      console.error("❌ ERROR in generateTitle:");
+      if (error instanceof Error) {
+        console.error("Error message:", error.message);
+        console.error("Error stack:", error.stack);
+      } else {
+        console.error("Error value:", error);
+      }
+      console.error("Request body:", JSON.stringify(req.body, null, 2));
+      console.log("=== END AI GENERATE TITLE (ERROR) ===\n");
+
       res.status(500).json({
         success: false,
         message: "Đã xảy ra lỗi khi tạo tiêu đề",
@@ -47,29 +98,85 @@ export class AiController {
     try {
       const propertyData = req.body;
 
+      // LOG: Ghi lại toàn bộ data nhận vào
+      console.log("=== AI GENERATE DESCRIPTION REQUEST ===");
+      console.log("Timestamp:", new Date().toISOString());
+      console.log("User ID:", (req as any).user?.userId || "Unknown");
+      console.log("Raw Request Body:", JSON.stringify(propertyData, null, 2));
+      console.log("Request Headers:", {
+        "content-type": req.headers["content-type"],
+        "user-agent": req.headers["user-agent"],
+      });
+
       if (
         !propertyData.type ||
         !propertyData.category ||
         !propertyData.location
       ) {
+        console.log("❌ VALIDATION FAILED - Missing required fields:");
+        console.log("- type:", !!propertyData.type);
+        console.log("- category:", !!propertyData.category);
+        console.log("- location:", !!propertyData.location);
+
         return res.status(400).json({
           success: false,
           message: "Thiếu thông tin bất động sản",
         });
       }
 
+      // LOG: Ghi lại data đã validated
+      console.log("✅ VALIDATION PASSED - Processed data:");
+      console.log("- Type:", propertyData.type);
+      console.log("- Category:", propertyData.category);
+      console.log("- Location:", JSON.stringify(propertyData.location));
+      console.log("- Area:", propertyData.area);
+      console.log("- Price:", propertyData.price);
+      console.log("- Currency:", propertyData.currency);
+      console.log("- Bedrooms:", propertyData.bedrooms);
+      console.log("- Bathrooms:", propertyData.bathrooms);
+      console.log("- Furniture:", propertyData.furniture);
+      console.log("- Legal Docs:", propertyData.legalDocs);
+      console.log("- House Direction:", propertyData.houseDirection);
+      console.log("- Balcony Direction:", propertyData.balconyDirection);
+      console.log("- Road Width:", propertyData.roadWidth);
+      console.log("- Front Width:", propertyData.frontWidth);
+
       // Tạo prompt cho Groq
       const prompt = this.createDescriptionPrompt(propertyData);
 
+      // LOG: Ghi lại prompt được tạo
+      console.log("📝 GENERATED PROMPT:");
+      console.log(prompt);
+      console.log("Prompt length:", prompt.length);
+
       // Gọi API Groq để tạo mô tả
+      console.log("🤖 CALLING GROQ AI...");
+      const startTime = Date.now();
       const description = await this.callGroqAI(prompt);
+      const endTime = Date.now();
+
+      // LOG: Ghi lại kết quả
+      console.log("✨ AI RESPONSE:");
+      console.log("Generated description:", description);
+      console.log("Description length:", description.length);
+      console.log("Processing time:", endTime - startTime, "ms");
+      console.log("=== END AI GENERATE DESCRIPTION ===\n");
 
       res.json({
         success: true,
         description,
       });
     } catch (error) {
-      console.error("Lỗi khi tạo mô tả:", error);
+      console.error("❌ ERROR in generateDescription:");
+      if (error instanceof Error) {
+        console.error("Error message:", error.message);
+        console.error("Error stack:", error.stack);
+      } else {
+        console.error("Error value:", error);
+      }
+      console.error("Request body:", JSON.stringify(req.body, null, 2));
+      console.log("=== END AI GENERATE DESCRIPTION (ERROR) ===\n");
+
       res.status(500).json({
         success: false,
         message: "Đã xảy ra lỗi khi tạo mô tả",
@@ -102,7 +209,7 @@ export class AiController {
 - Hướng nhà: ${propertyData.houseDirection || "Không có thông tin"}
 
 Yêu cầu:
-- Tiêu đề ngắn gọn, không quá 80 ký tự
+- Tiêu đề ngắn gọn, ít nhất 100 ký tự và không quá 150 ký tự
 - Đặt thông tin quan trọng lên đầu (loại giao dịch, loại BĐS, diện tích, địa điểm)
 - Sử dụng các từ ngữ hấp dẫn nhưng không phóng đại
 - Tiêu đề phải bằng tiếng Việt có dấu
@@ -112,7 +219,7 @@ Chỉ trả về tiêu đề, không có giải thích.`;
   }
 
   /**
-   * Tạo prompt cho mô tả (giữ nguyên)
+   * Tạo prompt cho mô tả
    */
   private createDescriptionPrompt(propertyData: any): string {
     const location = propertyData.location;
@@ -148,7 +255,8 @@ Yêu cầu:
 - Độ dài bắt buộc dưới 1500 ký tự
 - Mô tả phải bằng tiếng Việt có dấu
 - Chia mô tả thành các đoạn ngắn để dễ đọc
-- Đầy đủ cấu trúc như sau: mở đầu, mô tả chi tiết, tiện ích, kết nối, pháp lý
+- Giá phải tính thành tỷ, triệu thay vì ghi số ra
+- Đầy đủ cấu trúc như sau: mở đầu, mô tả chi tiết, tiện ích, kết nối, pháp lý nhưng không ghi chữ (mở đầu, mô tả chi tiết, tiện ích, kết nối, pháp lý)
 
 Chỉ trả về mô tả, không có giải thích hoặc tiêu đề.`;
   }
@@ -160,21 +268,64 @@ Chỉ trả về mô tả, không có giải thích hoặc tiêu đề.`;
     try {
       const apiKey = process.env.GROQ_API_KEY;
 
+      // LOG: Kiểm tra API key
+      console.log("🔑 GROQ API KEY:", apiKey ? "✅ Available" : "❌ Missing");
+
       // Nếu không có API key, trả về mẫu demo
       if (!apiKey) {
+        console.log("⚠️ No API key found, returning placeholder response");
         return this.getPlaceholderResponse(prompt);
       }
 
+      // LOG: Ghi lại config gọi API
+      const config = {
+        model: "llama-3.3-70b-versatile",
+        maxTokens: 800,
+        temperature: 0.3,
+        promptLength: prompt.length,
+      };
+      console.log("🔧 GROQ API Config:", config);
+
+      const startTime = Date.now();
       const { text } = await generateText({
         model: groq("llama-3.3-70b-versatile"), // hoặc "llama-3.1-8b"
         prompt: prompt,
         maxTokens: 800,
         temperature: 0.3,
       });
+      const endTime = Date.now();
+
+      // LOG: Ghi lại kết quả API
+      console.log("📡 GROQ API Response:");
+      console.log("- Status: ✅ Success");
+      console.log("- API Call Duration:", endTime - startTime, "ms");
+      console.log("- Response Length:", text.length);
+      console.log(
+        "- Raw Response:",
+        text.substring(0, 200) + (text.length > 200 ? "..." : "")
+      );
 
       return text.trim();
     } catch (error) {
-      console.error("Lỗi khi gọi Groq API:", error);
+      console.error("❌ GROQ API ERROR:");
+      if (typeof error === "object" && error !== null) {
+        console.error("- Error Type:", (error as any).constructor?.name);
+        console.error("- Error Message:", (error as any).message);
+        console.error("- Error Code:", (error as any).code || "N/A");
+        console.error("- Error Stack:", (error as any).stack);
+
+        if ((error as any).response) {
+          console.error(
+            "- API Response Status:",
+            (error as any).response.status
+          );
+          console.error("- API Response Data:", (error as any).response.data);
+        }
+      } else {
+        console.error("- Error value:", error);
+      }
+
+      console.log("⚠️ Falling back to placeholder response due to API error");
       // Trả về mẫu trong trường hợp lỗi
       return this.getPlaceholderResponse(prompt);
     }

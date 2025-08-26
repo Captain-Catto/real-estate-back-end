@@ -166,6 +166,7 @@ export class PostController {
       await post.save();
       await post.populate("author", "username email avatar");
       await post.populate("category", "name slug");
+      await post.populate("project", "name address");
 
       res.status(201).json({
         success: true,
@@ -515,7 +516,8 @@ export class PostController {
 
       const post = await Post.findById(postId)
         .populate("author", "username email avatar phoneNumber")
-        .populate("category", "name slug");
+        .populate("category", "name slug")
+        .populate("project", "name address");
 
       if (!post) {
         return res.status(404).json({
@@ -676,6 +678,7 @@ export class PostController {
       const posts = await Post.find(filter)
         .populate("author", "username email avatar")
         .populate("category", "name slug")
+        .populate("project", "name address")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
@@ -820,6 +823,7 @@ export class PostController {
       const posts = await Post.find(query)
         .populate("author", "username avatar")
         .populate("category", "name slug")
+        .populate("project", "name address")
         .populate("location.province", "name")
         .populate("location.ward", "name")
         .select("-content") // Exclude full content for performance
@@ -928,7 +932,6 @@ export class PostController {
 
       const allowedUpdateKeys = Object.keys(updates).filter(
         (key) =>
-          key !== "category" &&
           key !== "type" &&
           key !== "status" &&
           key !== "package" &&
@@ -936,13 +939,50 @@ export class PostController {
       );
       console.log("🔑 Allowed update keys:", allowedUpdateKeys);
 
-      allowedUpdateKeys.forEach((key) => {
+      for (const key of allowedUpdateKeys) {
         console.log(
           `📝 Updating ${key}: ${(post as any)[key]} → ${updates[key]}`
         );
-        // Use type assertion to avoid TS error
-        (post as any)[key] = updates[key];
-      });
+        
+        // Special handling for ObjectId fields to avoid cast errors
+        const objectIdFields = ['project', 'approvedBy', 'rejectedBy'];
+        if (objectIdFields.includes(key)) {
+          // Only set if it's a valid ObjectId string, otherwise set to null/undefined
+          if (updates[key] && updates[key] !== '' && mongoose.Types.ObjectId.isValid(updates[key])) {
+            (post as any)[key] = updates[key];
+            console.log(`✅ Valid ObjectId for ${key}: ${updates[key]}`);
+          } else {
+            (post as any)[key] = null; // Set to null for empty/invalid ObjectId fields
+            console.log(`⚠️ Invalid ObjectId for ${key}, setting to null: "${updates[key]}"`);
+          }
+        } else if (key === 'category') {
+          // Special handling for category - convert name to ObjectId
+          const categoryValue = updates[key];
+          if (mongoose.Types.ObjectId.isValid(categoryValue)) {
+            // Already an ObjectId
+            (post as any)[key] = categoryValue;
+            console.log(`✅ Valid ObjectId for category: ${categoryValue}`);
+          } else {
+            // Try to find category by name
+            const categoryDoc = await Category.findOne({ 
+              $or: [
+                { name: categoryValue },
+                { slug: categoryValue }
+              ]
+            });
+            if (categoryDoc) {
+              (post as any)[key] = categoryDoc._id;
+              console.log(`✅ Found category by name "${categoryValue}": ${categoryDoc._id}`);
+            } else {
+              console.log(`⚠️ Category not found: "${categoryValue}", keeping original`);
+              // Don't change category if not found
+            }
+          }
+        } else {
+          // Use type assertion to avoid TS error
+          (post as any)[key] = updates[key];
+        }
+      }
 
       // QUAN TRỌNG: Chuyển trạng thái về pending để admin duyệt lại
       // Đặc biệt quan trọng: Khi tin bị từ chối và user sửa lại, cần chuyển về pending
@@ -960,7 +1000,13 @@ export class PostController {
         console.log(
           `📋 Keeping rejection history: Rejected at ${post.rejectedAt} by ${post.rejectedBy} for reason: ${post.rejectedReason}`
         );
-      } else if (post.status !== "draft") {
+      } else if (
+        post.status !== "pending" &&
+        post.status !== "active" &&
+        post.status !== "expired" &&
+        post.status !== "inactive" &&
+        post.status !== "deleted"
+      ) {
         // Các trạng thái khác (active, pending, etc.) cũng chuyển về pending khi edit
         post.status = "pending";
         post.approvedAt = undefined;
@@ -1055,7 +1101,6 @@ export class PostController {
 
       const allowedUpdateKeys = Object.keys(updates).filter(
         (key) =>
-          key !== "category" &&
           key !== "type" &&
           key !== "status" &&
           key !== "package" &&
@@ -1064,9 +1109,50 @@ export class PostController {
           key !== "createdAt" &&
           key !== "updatedAt"
       );
-      allowedUpdateKeys.forEach((key) => {
-        (post as any)[key] = updates[key];
-      });
+      for (const key of allowedUpdateKeys) {
+        console.log(
+          `📝 Updating ${key}: ${(post as any)[key]} → ${updates[key]}`
+        );
+        
+        // Special handling for ObjectId fields to avoid cast errors
+        const objectIdFields = ['project', 'approvedBy', 'rejectedBy'];
+        if (objectIdFields.includes(key)) {
+          // Only set if it's a valid ObjectId string, otherwise set to null/undefined
+          if (updates[key] && updates[key] !== '' && mongoose.Types.ObjectId.isValid(updates[key])) {
+            (post as any)[key] = updates[key];
+            console.log(`✅ Valid ObjectId for ${key}: ${updates[key]}`);
+          } else {
+            (post as any)[key] = null; // Set to null for empty/invalid ObjectId fields
+            console.log(`⚠️ Invalid ObjectId for ${key}, setting to null: "${updates[key]}"`);
+          }
+        } else if (key === 'category') {
+          // Special handling for category - convert name to ObjectId
+          const categoryValue = updates[key];
+          if (mongoose.Types.ObjectId.isValid(categoryValue)) {
+            // Already an ObjectId
+            (post as any)[key] = categoryValue;
+            console.log(`✅ Valid ObjectId for category: ${categoryValue}`);
+          } else {
+            // Try to find category by name
+            const categoryDoc = await Category.findOne({ 
+              $or: [
+                { name: categoryValue },
+                { slug: categoryValue }
+              ]
+            });
+            if (categoryDoc) {
+              (post as any)[key] = categoryDoc._id;
+              console.log(`✅ Found category by name "${categoryValue}": ${categoryDoc._id}`);
+            } else {
+              console.log(`⚠️ Category not found: "${categoryValue}", keeping original`);
+              // Don't change category if not found
+            }
+          }
+        } else {
+          // Use type assertion to avoid TS error
+          (post as any)[key] = updates[key];
+        }
+      }
 
       // Đặt lại trạng thái về pending (chờ duyệt)
       post.status = "pending"; // pending
@@ -2271,7 +2357,8 @@ export class PostController {
       // Get the current post
       const currentPost = await Post.findById(postId)
         .populate("category", "name slug")
-        .populate("author", "name email");
+        .populate("author", "name email")
+        .populate("project", "name address");
 
       if (!currentPost) {
         return res.status(404).json({

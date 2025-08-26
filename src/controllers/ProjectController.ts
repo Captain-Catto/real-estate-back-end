@@ -133,47 +133,86 @@ export class ProjectController {
           });
 
           if (priceRange) {
-            // Parse numeric values from price range name như "5 - 10 tỷ"
+            console.log(`✅ Found priceRange config: "${priceRange.name}"`);
+
+            // Parse numeric values từ priceRange name
             const priceMatch = priceRange.name.match(/(\d+)\s*[-–]\s*(\d+)/);
+            let filterMinPrice, filterMaxPrice;
+
             if (priceMatch) {
-              const minPrice = parseInt(priceMatch[1]);
-              const maxPrice = parseInt(priceMatch[2]);
+              filterMinPrice = parseInt(priceMatch[1]);
+              filterMaxPrice = parseInt(priceMatch[2]);
+            } else {
+              // Handle special cases
+              const underMatch = priceRange.name.match(/Dưới\s*(\d+)/);
+              const overMatch = priceRange.name.match(/Trên\s*(\d+)/);
 
-              // Tìm tất cả dự án có priceRange overlap với range này
-              const priceRegexPatterns = [];
-
-              // Tạo regex cho các range có thể overlap: 3-5, 5-8, 8-12 cho filter 5-10
-              for (let i = minPrice - 3; i <= maxPrice + 3; i++) {
-                for (let j = i + 1; j <= maxPrice + 5; j++) {
-                  if (
-                    i <= maxPrice &&
-                    j >= minPrice // Check overlap
-                  ) {
-                    // Tạo pattern cho i-j tỷ (với hoặc không có khoảng trắng)
-                    priceRegexPatterns.push(`${i}\\s*[-–]\\s*${j}\\s*tỷ`);
-                  }
-                }
-              }
-
-              if (priceRegexPatterns.length > 0) {
+              if (underMatch) {
+                filterMinPrice = 0;
+                filterMaxPrice = parseInt(underMatch[1]);
+              } else if (overMatch) {
+                filterMinPrice = parseInt(overMatch[1]);
+                filterMaxPrice = 999;
+              } else {
+                // Fallback to old regex method for unrecognized formats
                 filter.priceRange = {
-                  $regex: priceRegexPatterns.join("|"),
+                  $regex: priceRange.name.replace(/[-\s]/g, "\\s*[-–]\\s*"),
                   $options: "i",
                 };
                 console.log(
-                  `✅ Price filter "${priceParam}" (${minPrice}-${maxPrice}) -> overlapping ranges pattern`
+                  `⚠️ Using fallback regex for: "${priceRange.name}"`
                 );
+                // Skip numeric logic, fallback already applied
+                return;
               }
-            } else {
-              // Fallback: exact string match với flexible spacing
-              filter.priceRange = {
-                $regex: priceRange.name.replace(/[-\s]/g, "\\s*[-–]\\s*"),
-                $options: "i",
-              };
-              console.log(
-                `✅ Price filter "${priceParam}" -> flexible pattern for: "${priceRange.name}"`
-              );
             }
+
+            // Simple numeric filtering approach
+            // Tìm projects có numeric price overlap hoặc string match
+            const numericPriceFilter = {
+              $or: [
+                // New format: numeric fields exist and overlap
+                {
+                  minPrice: { $exists: true, $ne: null, $lte: filterMaxPrice },
+                  maxPrice: { $exists: true, $ne: null, $gte: filterMinPrice },
+                },
+                // Old format: no numeric fields, use string matching
+                {
+                  $and: [
+                    {
+                      $or: [
+                        { minPrice: { $exists: false } },
+                        { minPrice: null },
+                      ],
+                    },
+                    {
+                      priceRange: {
+                        $regex: `${filterMinPrice}\\s*[-–]\\s*${filterMaxPrice}\\s*tỷ`,
+                        $options: "i",
+                      },
+                    },
+                  ],
+                },
+              ],
+            };
+
+            // Merge price filter with existing filters
+            const existingFilterKeys = Object.keys(filter);
+            if (existingFilterKeys.length > 0) {
+              // If other filters exist, use $and to combine
+              const existingFilters = { ...filter };
+              // Clear existing filter properties
+              existingFilterKeys.forEach((key) => delete filter[key]);
+              // Set new combined filter
+              filter.$and = [existingFilters, numericPriceFilter];
+            } else {
+              // No existing filters, apply price filter directly
+              Object.assign(filter, numericPriceFilter);
+            }
+
+            console.log(
+              `✅ Price filter "${priceParam}" (${filterMinPrice}-${filterMaxPrice}) -> applied numeric overlap logic`
+            );
           } else {
             console.log(`❌ Price range "${priceParam}" not found`);
           }
@@ -182,7 +221,7 @@ export class ProjectController {
         }
       }
 
-      // Area range filter
+      // Area range filter - now using numeric comparison since area is a number
       if (req.query.area || req.query.areaRange) {
         const areaParam = req.query.area || req.query.areaRange;
         console.log("📏 Filtering by area:", areaParam);
@@ -195,46 +234,47 @@ export class ProjectController {
           });
 
           if (areaRange) {
-            // Parse numeric values from area range name như "100 - 200 m²"
-            const areaMatch = areaRange.name.match(/(\d+)\s*[-–]\s*(\d+)/);
+            // Parse numeric values from area range name như "500 - 1.000 m²"
+            // Handle both comma and dot as thousand separators
+            const areaMatch = areaRange.name.match(
+              /([\d.,]+)\s*[-–]\s*([\d.,]+)/
+            );
             if (areaMatch) {
-              const minArea = parseInt(areaMatch[1]);
-              const maxArea = parseInt(areaMatch[2]);
+              // Remove thousand separators (both comma and dot)
+              const filterMinArea = parseInt(areaMatch[1].replace(/[.,]/g, ""));
+              const filterMaxArea = parseInt(areaMatch[2].replace(/[.,]/g, ""));
 
-              // Tìm tất cả dự án có area overlap với range này
-              const areaRegexPatterns = [];
+              // Use numeric comparison since area is now a number field
+              filter.area = {
+                $gte: filterMinArea,
+                $lte: filterMaxArea,
+              };
 
-              // Tạo regex cho các range có thể overlap: 80-120, 100-200, 150-300 cho filter 100-200
-              for (let i = minArea - 50; i <= maxArea + 50; i += 10) {
-                for (let j = i + 20; j <= maxArea + 100; j += 10) {
-                  if (
-                    i <= maxArea &&
-                    j >= minArea // Check overlap
-                  ) {
-                    // Tạo pattern cho i-j m² (với hoặc không có khoảng trắng)
-                    areaRegexPatterns.push(`${i}\\s*[-–]\\s*${j}\\s*m²`);
-                  }
-                }
-              }
+              console.log(
+                `✅ Area filter "${areaParam}" (${filterMinArea}-${filterMaxArea}m²) -> using numeric range query`
+              );
+            } else {
+              // Handle special cases like "Dưới X m²" or "Trên X m²"
+              const underMatch = areaRange.name.match(/Dưới\s*([\d.,]+)/i);
+              const overMatch = areaRange.name.match(/Trên\s*([\d.,]+)/i);
 
-              if (areaRegexPatterns.length > 0) {
-                filter.area = {
-                  $regex: areaRegexPatterns.join("|"),
-                  $options: "i",
-                };
+              if (underMatch) {
+                const maxArea = parseInt(underMatch[1].replace(/[.,]/g, ""));
+                filter.area = { $lt: maxArea };
                 console.log(
-                  `✅ Area filter "${areaParam}" (${minArea}-${maxArea}) -> overlapping ranges pattern`
+                  `✅ Area filter "${areaParam}" -> area < ${maxArea}m²`
+                );
+              } else if (overMatch) {
+                const minArea = parseInt(overMatch[1].replace(/[.,]/g, ""));
+                filter.area = { $gt: minArea };
+                console.log(
+                  `✅ Area filter "${areaParam}" -> area > ${minArea}m²`
+                );
+              } else {
+                console.log(
+                  `⚠️ Could not parse area range: "${areaRange.name}"`
                 );
               }
-            } else {
-              // Fallback: exact string match với flexible spacing
-              filter.area = {
-                $regex: areaRange.name.replace(/[-\s]/g, "\\s*[-–]\\s*"),
-                $options: "i",
-              };
-              console.log(
-                `✅ Area filter "${areaParam}" -> flexible pattern for: "${areaRange.name}"`
-              );
             }
           } else {
             console.log(`❌ Area range "${areaParam}" not found`);
@@ -803,6 +843,78 @@ export class ProjectController {
       res.status(500).json({
         success: false,
         message: "Có lỗi xảy ra khi lấy thống kê dự án",
+      });
+    }
+  }
+
+  // Reorder project images (admin only)
+  async reorderProjectImages(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { images } = req.body;
+
+      // Validate that images array is provided and not empty
+      if (!Array.isArray(images)) {
+        return res.status(400).json({
+          success: false,
+          message: "Images array is required",
+        });
+      }
+
+      // Validate that images array has at most 20 items
+      if (images.length > 20) {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot have more than 20 images",
+        });
+      }
+
+      // Check if project exists
+      const existingProject = await Project.findById(id);
+      if (!existingProject) {
+        return res.status(404).json({
+          success: false,
+          message: "Project not found",
+        });
+      }
+
+      // Validate that all provided URLs exist in the current project images
+      const currentImages = existingProject.images || [];
+      const invalidImages = images.filter(
+        (url: string) => !currentImages.includes(url)
+      );
+
+      if (invalidImages.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Some images are not valid for this project",
+          invalidImages,
+        });
+      }
+
+      // Update project with new image order
+      const updatedProject = await Project.findByIdAndUpdate(
+        id,
+        { images },
+        { new: true, runValidators: true }
+      ).select("-__v");
+
+      console.log(
+        `✅ Reordered images for project ${id}: ${images.length} images`
+      );
+
+      res.json({
+        success: true,
+        message: "Images reordered successfully",
+        data: {
+          images: updatedProject?.images || [],
+        },
+      });
+    } catch (error: any) {
+      console.error("Error reordering project images:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error reordering images",
       });
     }
   }

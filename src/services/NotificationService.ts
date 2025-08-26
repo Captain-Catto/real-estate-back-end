@@ -2,6 +2,7 @@ import { Notification } from "../models";
 import { Post } from "../models";
 import { ProvinceModel, WardModel } from "../models/Location";
 import mongoose from "mongoose";
+import { webSocketService } from "./WebSocketService";
 
 export interface CreateNotificationData {
   userId: string | mongoose.Types.ObjectId;
@@ -130,6 +131,31 @@ export class NotificationService {
       console.log(
         `✅ Notification created for user ${data.userId}: ${data.title}`
       );
+
+      // 🔌 Emit WebSocket event for real-time notification updates
+      try {
+        console.log(
+          `🔌 Emitting WebSocket notification update for user ${data.userId}`
+        );
+
+        webSocketService.emitNotificationUpdate({
+          userId: data.userId.toString(),
+          notification: {
+            id: notification._id.toString(),
+            title: notification.title,
+            message: notification.message,
+            type: notification.type,
+            data: notification.data || {},
+            read: notification.read,
+            createdAt: notification.createdAt,
+          },
+        });
+
+        console.log(`✅ WebSocket notification event emitted successfully`);
+      } catch (error) {
+        console.error("❌ Error emitting WebSocket notification event:", error);
+        // Don't fail the notification creation for WebSocket errors
+      }
     } catch (error) {
       console.error("❌ Error creating notification:", error);
     }

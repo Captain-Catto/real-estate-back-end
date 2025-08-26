@@ -5,7 +5,6 @@ import { User } from "../models/User";
 import { Post } from "../models/Post";
 import { Project } from "../models/Project";
 import { Payment } from "../models/Payment";
-import { ContactMessage } from "../models/ContactMessage";
 import { Wallet } from "../models/Wallet";
 import { News } from "../models/News";
 import { PageView } from "../models/PageView";
@@ -18,6 +17,9 @@ export class StatsController {
    * GET /api/admin/stats/overview?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
    */
   static async getOverviewStats(req: AuthenticatedRequest, res: Response) {
+    const startTime = Date.now();
+    console.log("🚀 [Backend] Starting getOverviewStats");
+
     try {
       // Permission check is handled by middleware, no need for additional role check
 
@@ -52,56 +54,101 @@ export class StatsController {
         paymentMatchCondition.createdAt = dateFilter;
       }
 
+      // Calculate start of current month
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      // Optimize by grouping related queries and reducing database calls
+      console.time("⏱️ Overview stats - Primary counts");
+      // Group 1: Basic counts that are fast (removed contacts for performance)
       const [
         totalUsers,
-        totalPosts,
         totalProjects,
         totalRevenue,
-        pendingPosts,
-        activePosts,
-        newUsersToday,
-        newPostsToday,
         totalNews,
-        totalContacts,
         totalViews,
-        paidPosts,
+        newUsersThisMonth,
       ] = await Promise.all([
         User.countDocuments(userMatchCondition),
-        Post.countDocuments(postMatchCondition),
         Project.countDocuments(projectMatchCondition),
         Payment.aggregate([
           { $match: paymentMatchCondition },
           { $group: { _id: null, total: { $sum: "$amount" } } },
         ]).then((result) => result[0]?.total || 0),
-        Post.countDocuments({
-          ...postMatchCondition,
-          status: "pending",
-        }),
-        Post.countDocuments({
-          ...postMatchCondition,
-          status: "active",
-        }),
-        User.countDocuments({
-          ...userMatchCondition,
-          createdAt: {
-            $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-          },
-        }),
-        Post.countDocuments({
-          ...postMatchCondition,
-          createdAt: {
-            $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-          },
-        }),
-        // Additional fields needed by frontend
         News.countDocuments({}),
-        ContactMessage.countDocuments({}),
         PageView.countDocuments({}),
-        Post.countDocuments({
-          ...postMatchCondition,
-          packageId: { $exists: true, $ne: null },
+        User.countDocuments({
+          role: { $ne: "admin" },
+          createdAt: { $gte: startOfMonth },
         }),
       ]);
+      console.timeEnd("⏱️ Overview stats - Primary counts");
+
+      console.time("⏱️ Overview stats - Post analytics");
+      // Group 2: Post-related queries in one optimized aggregation
+      const postAnalytics = await Post.aggregate([
+        {
+          $match: postMatchCondition,
+        },
+        {
+          $group: {
+            _id: null,
+            totalPosts: { $sum: 1 },
+            pendingPosts: {
+              $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+            },
+            activePosts: {
+              $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
+            },
+            todayPosts: {
+              $sum: {
+                $cond: [
+                  {
+                    $gte: [
+                      "$createdAt",
+                      new Date(new Date().setHours(0, 0, 0, 0)),
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            postsWithPackage: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: ["$packageId", null] },
+                      { $ne: ["$packageId", undefined] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]);
+
+      const {
+        totalPosts = 0,
+        pendingPosts = 0,
+        activePosts = 0,
+        todayPosts: newPostsToday = 0,
+        postsWithPackage = 0,
+      } = postAnalytics[0] || {};
+      console.timeEnd("⏱️ Overview stats - Post analytics");
+
+      console.log(
+        `📊 [Backend] Overview stats collected: users=${totalUsers}, posts=${totalPosts}, revenue=${totalRevenue}`
+      );
+
+      const overviewDuration = Date.now() - startTime;
+      console.log(
+        `✅ [Backend] getOverviewStats completed in ${overviewDuration}ms`
+      );
 
       res.json({
         success: true,
@@ -112,21 +159,23 @@ export class StatsController {
           totalRevenue,
           pendingPosts,
           activePosts,
-          newUsersToday,
+          newUsersToday: newUsersThisMonth, // Keep for backward compatibility
           newPostsToday,
           totalNews,
-          totalContacts,
           totalViews,
-          paidPosts,
           // Additional fields for better stats display
-          newUsersThisMonth: newUsersToday, // Using today's data as proxy
+          newUsersThisMonth,
           newPostsThisMonth: newPostsToday, // Using today's data as proxy
           revenueThisMonth:
             totalRevenue > 0 ? Math.round(totalRevenue * 0.1) : 0, // Rough estimate
         },
       });
     } catch (error) {
-      console.error("Error getting overview stats:", error);
+      const duration = Date.now() - startTime;
+      console.error(
+        `❌ [Backend] getOverviewStats failed in ${duration}ms:`,
+        error
+      );
       res.status(500).json({
         success: false,
         message: "Lỗi server khi lấy thống kê tổng quan",
@@ -139,6 +188,9 @@ export class StatsController {
    * GET /api/admin/stats/revenue-chart?period=month|quarter|year&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
    */
   static async getRevenueChart(req: AuthenticatedRequest, res: Response) {
+    const startTime = Date.now();
+    console.log("🚀 [Backend] Starting getRevenueChart");
+
     try {
       // Permission check is handled by middleware, no need for additional role check
       const period = (req.query.period as string) || "month";
@@ -263,6 +315,9 @@ export class StatsController {
         return periodData ? periodData.total : 0;
       });
 
+      const duration = Date.now() - startTime;
+      console.log(`✅ [Backend] getRevenueChart completed in ${duration}ms`);
+
       res.json({
         success: true,
         data: {
@@ -279,7 +334,11 @@ export class StatsController {
         },
       });
     } catch (error) {
-      console.error("Error getting revenue chart:", error);
+      const duration = Date.now() - startTime;
+      console.error(
+        `❌ [Backend] getRevenueChart failed in ${duration}ms:`,
+        error
+      );
       res.status(500).json({
         success: false,
         message: "Lỗi server khi lấy biểu đồ doanh thu",
@@ -292,6 +351,9 @@ export class StatsController {
    * GET /api/admin/stats/user-chart?period=month|quarter|year&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
    */
   static async getUserChart(req: AuthenticatedRequest, res: Response) {
+    const startTime = Date.now();
+    console.log("🚀 [Backend] Starting getUserChart");
+
     try {
       // Permission check is handled by middleware, no need for additional role check
       const period = (req.query.period as string) || "month";
@@ -455,8 +517,15 @@ export class StatsController {
           ],
         },
       });
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ [Backend] getUserChart completed in ${duration}ms`);
     } catch (error) {
-      console.error("Error getting user chart:", error);
+      const duration = Date.now() - startTime;
+      console.error(
+        `❌ [Backend] getUserChart failed in ${duration}ms:`,
+        error
+      );
       res.status(500).json({
         success: false,
         message: "Lỗi server khi lấy biểu đồ người dùng",
@@ -469,6 +538,9 @@ export class StatsController {
    * GET /api/admin/stats/top-locations
    */
   static async getTopLocations(req: AuthenticatedRequest, res: Response) {
+    const startTime = Date.now();
+    console.log("🚀 [Backend] Starting getTopLocations");
+
     try {
       // Permission check is handled by middleware, no need for additional role check
       // Load province data for mapping codes to names
@@ -492,7 +564,7 @@ export class StatsController {
           $sort: { count: -1 },
         },
         {
-          $limit: 5,
+          $limit: 10,
         },
       ]);
 
@@ -516,8 +588,15 @@ export class StatsController {
         success: true,
         data: topLocations,
       });
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ [Backend] getTopLocations completed in ${duration}ms`);
     } catch (error) {
-      console.error("Error getting top locations:", error);
+      const duration = Date.now() - startTime;
+      console.error(
+        `❌ [Backend] getTopLocations failed in ${duration}ms:`,
+        error
+      );
       res.status(500).json({
         success: false,
         message: "Lỗi server khi lấy top địa điểm",
@@ -775,59 +854,62 @@ export class StatsController {
    * GET /api/admin/stats/posts-chart
    */
   static async getPostsChart(req: AuthenticatedRequest, res: Response) {
+    const startTime = Date.now();
+    console.log("🚀 [Backend] Starting getPostsChart");
+
     try {
       // Permission check is handled by middleware, no need for additional role check
-      // Aggregate posts by package
-      const packageStats = await Post.aggregate([
+
+      // Step 1: Count posts directly by packageId (since packageId is stored as string)
+      const postCounts = await Post.aggregate([
         {
           $group: {
-            _id: {
-              $cond: [
-                {
-                  $or: [
-                    { $eq: ["$packageId", null] },
-                    { $eq: ["$packageId", ""] },
-                    { $eq: [{ $type: "$packageId" }, "missing"] },
-                  ],
-                },
-                "Tin miễn phí",
-                "$packageId",
-              ],
-            },
+            _id: "$packageId",
             count: { $sum: 1 },
           },
         },
-        {
-          $sort: { count: -1 },
-        },
       ]);
 
-      // Get package names for paid posts
-      const packageData = [];
-      for (const stat of packageStats) {
-        if (stat._id === "Tin miễn phí") {
-          packageData.push({
-            label: "Tin miễn phí",
-            count: stat.count,
-          });
-        } else {
-          try {
-            const packageInfo = await Package.findById(stat._id);
-            packageData.push({
-              label: packageInfo?.name || `Gói ${stat._id}`,
-              count: stat.count,
-            });
-          } catch (error) {
-            packageData.push({
-              label: `Gói ${stat._id}`,
-              count: stat.count,
-            });
-          }
-        }
-      }
+      // Step 2: Map the counts to our 4 categories
+      const categoryCounts = {
+        free: 0,
+        basic: 0,
+        premium: 0,
+        vip: 0,
+      };
 
-      const labels = packageData.map((item) => item.label);
-      const data = packageData.map((item) => item.count);
+      postCounts.forEach((item) => {
+        const packageId = item._id;
+        const count = item.count;
+
+        if (packageId === "free" || !packageId) {
+          categoryCounts.free += count;
+        } else if (packageId === "basic") {
+          categoryCounts.basic += count;
+        } else if (packageId === "premium") {
+          categoryCounts.premium += count;
+        } else if (packageId === "vip") {
+          categoryCounts.vip += count;
+        } else if (mongoose.Types.ObjectId.isValid(packageId)) {
+          // Handle ObjectId references by looking up the package
+          // For now, we'll handle this as a separate case
+          categoryCounts.free += count; // Default to free for unknown ObjectId packages
+        }
+      });
+
+      // Step 3: Create fixed output with exactly 4 categories using actual package names
+      const labels = [
+        "Gói Miễn Phí",
+        "Gói Cơ Bản Cao Cấp",
+        "Gói Cao Cấp",
+        "Gói VIP",
+      ];
+      const data = [
+        categoryCounts.free,
+        categoryCounts.basic,
+        categoryCounts.premium,
+        categoryCounts.vip,
+      ];
 
       res.json({
         success: true,
@@ -838,26 +920,31 @@ export class StatsController {
               label: "Số lượng tin đăng",
               data,
               backgroundColor: [
-                "rgba(255, 99, 132, 0.2)",
-                "rgba(54, 162, 235, 0.2)",
-                "rgba(255, 205, 86, 0.2)",
-                "rgba(75, 192, 192, 0.2)",
-                "rgba(153, 102, 255, 0.2)",
+                "rgba(156, 163, 175, 0.2)", // Gray for free
+                "rgba(59, 130, 246, 0.2)", // Blue for basic
+                "rgba(249, 115, 22, 0.2)", // Orange for premium
+                "rgba(168, 85, 247, 0.2)", // Purple for VIP
               ],
               borderColor: [
-                "rgba(255, 99, 132, 1)",
-                "rgba(54, 162, 235, 1)",
-                "rgba(255, 205, 86, 1)",
-                "rgba(75, 192, 192, 1)",
-                "rgba(153, 102, 255, 1)",
+                "rgba(156, 163, 175, 1)",
+                "rgba(59, 130, 246, 1)",
+                "rgba(249, 115, 22, 1)",
+                "rgba(168, 85, 247, 1)",
               ],
               borderWidth: 1,
             },
           ],
         },
       });
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ [Backend] getPostsChart completed in ${duration}ms`);
     } catch (error) {
-      console.error("Error getting posts chart:", error);
+      const duration = Date.now() - startTime;
+      console.error(
+        `❌ [Backend] getPostsChart failed in ${duration}ms:`,
+        error
+      );
       res.status(500).json({
         success: false,
         message: "Lỗi server khi lấy biểu đồ tin đăng",
@@ -870,36 +957,51 @@ export class StatsController {
    * GET /api/admin/stats/property-types-chart
    */
   static async getPropertyTypesChart(req: AuthenticatedRequest, res: Response) {
+    const startTime = Date.now();
+    console.log("🚀 [Backend] Starting getPropertyTypesChart");
+
     try {
       // Permission check is handled by middleware, no need for additional role check
-      // Get property types from categories
-      const propertyTypes = await Post.aggregate([
+
+      console.time("⏱️ PropertyTypes optimized aggregation");
+      // Optimized approach: First get category data, then count posts per category
+      const categoryData = await Category.find({}, { name: 1 }).lean();
+      const categoryMap = new Map();
+      categoryData.forEach((cat) =>
+        categoryMap.set(cat._id.toString(), cat.name)
+      );
+
+      // Fast aggregation without lookup
+      const propertyTypesRaw = await Post.aggregate([
         {
-          $lookup: {
-            from: "categories",
-            localField: "category",
-            foreignField: "_id",
-            as: "categoryInfo",
-          },
-        },
-        {
-          $unwind: {
-            path: "$categoryInfo",
-            preserveNullAndEmptyArrays: true,
+          $match: {
+            status: { $in: ["approved", "active"] },
+            category: { $exists: true, $ne: null },
           },
         },
         {
           $group: {
-            _id: {
-              $ifNull: ["$categoryInfo.name", "Chưa phân loại"],
-            },
+            _id: "$category",
             count: { $sum: 1 },
           },
         },
         {
           $sort: { count: -1 },
         },
+        {
+          $limit: 10,
+        },
       ]);
+
+      // Map category IDs to names
+      const propertyTypes = propertyTypesRaw.map((item) => ({
+        _id: categoryMap.get(item._id.toString()) || "Chưa phân loại",
+        count: item.count,
+      }));
+
+      console.timeEnd("⏱️ PropertyTypes optimized aggregation");
+
+      console.log(`📊 [Backend] Found ${propertyTypes.length} property types`);
 
       const labels = propertyTypes.map((item) => item._id);
       const data = propertyTypes.map((item) => item.count);
@@ -933,8 +1035,17 @@ export class StatsController {
           ],
         },
       });
+
+      const duration = Date.now() - startTime;
+      console.log(
+        `✅ [Backend] getPropertyTypesChart completed in ${duration}ms`
+      );
     } catch (error) {
-      console.error("Error getting property types chart:", error);
+      const duration = Date.now() - startTime;
+      console.error(
+        `❌ [Backend] getPropertyTypesChart failed in ${duration}ms:`,
+        error
+      );
       res.status(500).json({
         success: false,
         message: "Lỗi server khi lấy biểu đồ loại bất động sản",

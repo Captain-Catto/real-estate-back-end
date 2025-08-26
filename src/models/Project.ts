@@ -56,11 +56,13 @@ export interface IProject extends Document {
   images: string[];
   videos?: string[];
   totalUnits: number;
-  area: string;
+  area: number; // Diện tích dự án (m²)
   numberOfTowers?: number;
   density?: string;
   status: "Đang cập nhật" | "Sắp mở bán" | "Đã bàn giao" | "Đang bán";
-  priceRange: string;
+  priceRange: string; // Backward compatibility - auto-generated from minPrice/maxPrice
+  minPrice?: number; // Giá thấp nhất (tỷ VND)
+  maxPrice?: number; // Giá cao nhất (tỷ VND) 
   description: string;
   facilities: string[];
   specifications: IProjectSpecifications;
@@ -186,9 +188,10 @@ const ProjectSchema = new Schema<IProject>(
       min: 0,
     },
     area: {
-      type: String,
+      type: Number,
       required: true,
-      trim: true,
+      min: 0,
+      max: 1000000, // Giới hạn tối đa 1 triệu m²
     },
     numberOfTowers: {
       type: Number,
@@ -207,6 +210,18 @@ const ProjectSchema = new Schema<IProject>(
       type: String,
       required: true,
       trim: true,
+    },
+    minPrice: {
+      type: Number,
+      min: 0,
+      max: 1000, // Giới hạn 1000 tỷ
+      index: true, // Index để query nhanh
+    },
+    maxPrice: {
+      type: Number,
+      min: 0,
+      max: 1000,
+      index: true,
     },
     description: {
       type: String,
@@ -273,6 +288,36 @@ ProjectSchema.index({
 ProjectSchema.index({
   isFeatured: -1,
   createdAt: -1,
+});
+// Indexes cho price filtering
+ProjectSchema.index({ minPrice: 1, maxPrice: 1 });
+ProjectSchema.index({ minPrice: 1 });
+ProjectSchema.index({ maxPrice: 1 });
+
+// Middleware để auto-generate priceRange từ minPrice/maxPrice
+ProjectSchema.pre('save', function(next) {
+  if (this.minPrice !== undefined && this.maxPrice !== undefined) {
+    // Generate priceRange string từ numeric values
+    if (this.minPrice === 0 && this.maxPrice === 1) {
+      this.priceRange = "Dưới 1 tỷ";
+    } else if (this.minPrice >= 50 && this.maxPrice >= 999) {
+      this.priceRange = "Trên 50 tỷ";
+    } else {
+      this.priceRange = `${this.minPrice}-${this.maxPrice} tỷ`;
+    }
+  }
+  next();
+});
+
+// Validation: minPrice phải <= maxPrice
+ProjectSchema.pre('save', function(next) {
+  if (this.minPrice !== undefined && this.maxPrice !== undefined) {
+    if (this.minPrice > this.maxPrice) {
+      const error = new Error('minPrice không thể lớn hơn maxPrice');
+      return next(error);
+    }
+  }
+  next();
 });
 
 export const Project = mongoose.model<IProject>("Project", ProjectSchema);

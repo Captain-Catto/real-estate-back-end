@@ -32,7 +32,7 @@ export const updateUserProfileSchema = z.object({
 export const userSearchSchema = z.object({
   keyword: z.string().optional(),
   role: z.enum(["user", "admin", "employee"]).optional(),
-  status: z.enum(["active", "inactive", "banned"]).optional(),
+  status: z.enum(["active", "banned"]).optional(),
   isEmailVerified: z
     .string()
     .optional()
@@ -53,12 +53,19 @@ export const userSearchSchema = z.object({
 
 // Admin update user validation
 export const adminUpdateUserSchema = z.object({
-  fullName: vietnameseNameSchema.optional(),
+  username: z
+    .string()
+    .min(3, "Tên người dùng phải có ít nhất 3 ký tự")
+    .max(50, "Tên người dùng quá dài")
+    .regex(
+      /^[a-zA-Z0-9_-]+$/,
+      "Tên người dùng chỉ được chứa chữ cái, số, dấu gạch dưới và dấu gạch ngang"
+    )
+    .optional(),
   email: emailSchema.optional(),
-  phone: phoneSchema,
+  phoneNumber: phoneSchema,
   role: z.enum(["user", "admin", "employee"]).optional(),
-  isEmailVerified: z.boolean().optional(),
-  isActive: z.boolean().optional(),
+  status: z.enum(["active", "banned"]).optional(),
   permissions: z.array(z.string()).optional(),
 });
 
@@ -97,7 +104,6 @@ export const bulkUserActionSchema = z
     userIds: z.array(mongoIdSchema).min(1, "Phải chọn ít nhất 1 người dùng"),
     action: z.enum([
       "activate",
-      "deactivate",
       "ban",
       "unban",
       "delete",

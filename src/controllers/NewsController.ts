@@ -135,62 +135,60 @@ export class NewsController {
     }
   }
 
-  /**
-   * Get featured news for homepage
-   * GET /api/news/featured?limit=6
-   */
-  async getFeaturedNews(req: RequestWithUser, res: Response) {
-    try {
-      const limit = parseInt(req.query.limit as string) || 6;
 
-      const news = await News.find({
+  /**
+   * Get news by user ID (public route)
+   * GET /api/news/user/:userId?page=1&limit=12
+   */
+  async getNewsByUser(req: RequestWithUser, res: Response) {
+    try {
+      const { userId } = req.params;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 12;
+      const skip = (page - 1) * limit;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: "User ID is required",
+        });
+      }
+
+      // Build query for user's published news
+      const query: any = {
+        author: new mongoose.Types.ObjectId(userId),
         status: "published",
-        isFeatured: true,
         publishedAt: { $exists: true },
-      })
+      };
+
+      // Execute query with pagination
+      const news = await News.find(query)
         .sort({ publishedAt: -1 })
+        .skip(skip)
         .limit(limit)
         .populate("author", "username email avatar")
         .lean();
 
-      return res.status(200).json({
-        success: true,
-        data: { news },
-      });
-    } catch (error) {
-      console.error("Error in getFeaturedNews:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Internal server error",
-        error: (error as Error).message,
-      });
-    }
-  }
-
-  /**
-   * Get hot news
-   * GET /api/news/hot?limit=10
-   */
-  async getHotNews(req: RequestWithUser, res: Response) {
-    try {
-      const limit = parseInt(req.query.limit as string) || 10;
-
-      const news = await News.find({
-        status: "published",
-        isHot: true,
-        publishedAt: { $exists: true },
-      })
-        .sort({ publishedAt: -1 })
-        .limit(limit)
-        .populate("author", "username email avatar")
-        .lean();
+      // Get total count for pagination
+      const totalItems = await News.countDocuments(query);
+      const totalPages = Math.ceil(totalItems / limit);
 
       return res.status(200).json({
         success: true,
-        data: { news },
+        data: {
+          news,
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalItems,
+            itemsPerPage: limit,
+            hasNext: page < totalPages,
+            hasPrev: page > 1,
+          },
+        },
       });
     } catch (error) {
-      console.error("Error in getHotNews:", error);
+      console.error("Error in getNewsByUser:", error);
       return res.status(500).json({
         success: false,
         message: "Internal server error",

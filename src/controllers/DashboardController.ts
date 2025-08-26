@@ -222,10 +222,12 @@ export class DashboardController {
     console.log("🔍 Dashboard Controller - getTopPostsByViews called");
     console.log("User from token:", req.user);
     console.log("Query params:", req.query);
-
+    
     try {
       const userId = req.user?.userId;
       const { limit = 5 } = req.query;
+
+      console.log("🔍 Processing getTopPostsByViews with userId:", userId, "limit:", limit);
 
       if (!userId) {
         console.log("❌ No userId found in token");
@@ -236,29 +238,61 @@ export class DashboardController {
       }
 
       console.log(`📊 Fetching top posts for user ${userId}, limit: ${limit}`);
+      console.log("🚨 TEST: About to run database query");
+
+      // Debug: Check total posts for this user
+      const totalUserPosts = await Post.countDocuments({ author: userId });
+      console.log(`📄 Total posts for user ${userId}: ${totalUserPosts}`);
+
+      // Debug: Check posts by status
+      const activeUserPosts = await Post.countDocuments({ author: userId, status: "active" });
+      const pendingUserPosts = await Post.countDocuments({ author: userId, status: "pending" });
+      
+      console.log(`📊 User posts by status:`, {
+        active: activeUserPosts,
+        pending: pendingUserPosts,
+        total: totalUserPosts
+      });
+
+      // If no posts exist, return empty array with helpful message
+      if (totalUserPosts === 0) {
+        console.log(`📝 No posts found for user ${userId}, returning empty array`);
+        return res.json({
+          success: true,
+          data: [],
+          message: "No posts found"
+        });
+      }
 
       const topPosts = await Post.find({
         author: userId,
-        status: "approved",
+        status: "active",
       })
-        .select("_id title views createdAt")
+        .select("_id title views createdAt type location")
         .sort({ views: -1 })
         .limit(parseInt(limit as string))
         .lean();
+
+      console.log(`🏆 Found ${topPosts.length} active posts for user ${userId}`);
 
       const formattedPosts = topPosts.map((post) => ({
         id: post._id.toString(),
         title: post.title,
         views: post.views || 0,
         createdAt: post.createdAt,
+        type: post.type || "ban",
+        location: post.location,
       }));
+
+      console.log(`✅ Returning ${formattedPosts.length} formatted posts to frontend`);
 
       res.json({
         success: true,
         data: formattedPosts,
       });
     } catch (error) {
-      console.error("Error getting top posts:", error);
+      console.error("❌ Error getting top posts:", error);
+      console.error("❌ Error stack:", error instanceof Error ? error.stack : 'No stack trace');
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -364,8 +398,8 @@ export class DashboardController {
       }
 
       // Get top posts across all users
-      const topPosts = await Post.find({ status: "approved" })
-        .select("_id title views createdAt author")
+      const topPosts = await Post.find({ status: "active" })
+        .select("_id title views createdAt author type location")
         .populate("author", "fullName")
         .sort({ views: -1 })
         .limit(5)
@@ -377,6 +411,8 @@ export class DashboardController {
         views: post.views || 0,
         createdAt: post.createdAt,
         authorName: (post.author as any)?.fullName || "Unknown",
+        type: post.type || "ban",
+        location: post.location,
       }));
 
       res.json({

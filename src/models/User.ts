@@ -9,7 +9,7 @@ export interface IUser extends Document {
   refreshTokens: string[];
   avatar?: string;
   role: "user" | "admin" | "employee";
-  status: "active" | "inactive" | "banned";
+  status: "active" | "banned";
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -57,7 +57,7 @@ const userSchema = new Schema<IUser>(
     },
     status: {
       type: String,
-      enum: ["active", "inactive", "banned"],
+      enum: ["active", "banned"],
       default: "active",
     },
   },

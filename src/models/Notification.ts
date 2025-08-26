@@ -9,6 +9,7 @@ export interface INotification extends Document {
     | "POST_PAYMENT"
     | "POST_APPROVED"
     | "POST_REJECTED"
+    | "POST_EXPIRED"
     | "PACKAGE_PURCHASE"
     | "SYSTEM"
     | "INTEREST";
@@ -43,6 +44,7 @@ const NotificationSchema = new Schema<INotification>(
         "POST_PAYMENT",
         "POST_APPROVED",
         "POST_REJECTED",
+        "POST_EXPIRED",
         "PACKAGE_PURCHASE",
         "SYSTEM",
         "INTEREST",

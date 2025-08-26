@@ -13,17 +13,13 @@ export const validate = (
   return (req: Request, res: Response, next: NextFunction) => {
     try {
       const dataToValidate = req[property];
-      console.log(`🔍 [Validation] Validating ${property}:`, JSON.stringify(dataToValidate, null, 2));
-      
       const validatedData = schema.parse(dataToValidate);
-      console.log(`✅ [Validation] ${property} validation passed:`, JSON.stringify(validatedData, null, 2));
 
       // Replace the original data with validated data
       req[property] = validatedData;
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
-        console.log(`❌ [Validation] ${property} validation failed:`, error.errors);
         
         // Create user-friendly message for toast
         const firstError = error.errors[0];
@@ -39,7 +35,6 @@ export const validate = (
           })),
         });
       }
-      console.log(`❌ [Validation] Unexpected error:`, error);
       next(error);
     }
   };

@@ -104,15 +104,17 @@ export class AreaController {
   // Tạo khoảng diện tích mới
   async createArea(req: AuthenticatedRequest, res: Response) {
     try {
-      const { name, slug, type, minValue, maxValue, order } = req.body;
+      const { name, slug, type, transactionType, minValue, maxValue, order } = req.body;
 
-      // Kiểm tra slug đã tồn tại chưa
-      const existingArea = await Area.findOne({ slug });
-      if (existingArea) {
-        return res.status(400).json({
-          success: false,
-          message: "Slug đã tồn tại",
-        });
+      // Kiểm tra slug + type đã tồn tại chưa (trừ slug "tat-ca" được phép dùng chung)
+      if (slug !== "tat-ca") {
+        const existingArea = await Area.findOne({ slug, type });
+        if (existingArea) {
+          return res.status(400).json({
+            success: false,
+            message: "Khoảng diện tích với slug và loại này đã tồn tại",
+          });
+        }
       }
 
       // Tạo ID tự động
@@ -161,21 +163,28 @@ export class AreaController {
         });
       }
 
-      // Kiểm tra slug nếu thay đổi
-      if (slug !== area.slug) {
-        const existingArea = await Area.findOne({ slug });
+      // Kiểm tra slug + type nếu thay đổi (trừ slug "tat-ca")
+      const newSlug = slug || area.slug;
+      const newType = type || area.type;
+      
+      if ((newSlug !== area.slug || newType !== area.type) && newSlug !== "tat-ca") {
+        const existingArea = await Area.findOne({ 
+          slug: newSlug, 
+          type: newType, 
+          _id: { $ne: id } // Loại trừ chính nó
+        });
         if (existingArea) {
           return res.status(400).json({
             success: false,
-            message: "Slug đã tồn tại",
+            message: "Khoảng diện tích với slug và loại này đã tồn tại",
           });
         }
       }
 
       // Cập nhật thông tin
       area.name = name || area.name;
-      area.slug = slug || area.slug;
-      area.type = type || area.type;
+      area.slug = newSlug;
+      area.type = newType;
       area.minValue =
         minValue !== undefined ? parseFloat(minValue) : area.minValue;
       area.maxValue =
