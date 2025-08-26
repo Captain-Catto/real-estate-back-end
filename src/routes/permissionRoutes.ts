@@ -1,20 +1,24 @@
 import { Router } from "express";
 import { PermissionController } from "../controllers/PermissionController";
-import { authenticateAdmin, requireAuth } from "../middleware";
+import {
+  authenticateAdmin,
+  requireAuth,
+  requirePermission,
+} from "../middleware";
 
 const router = Router();
 
 // Lấy danh sách quyền có sẵn
 router.get(
   "/available",
-  authenticateAdmin,
+  requirePermission("view_settings"), // Changed from authenticateAdmin
   PermissionController.getAvailablePermissions
 );
 
-// Lấy danh sách người dùng và quyền (chỉ admin)
+// Lấy danh sách người dùng và quyền
 router.get(
   "/users",
-  authenticateAdmin,
+  requirePermission("view_users"), // Changed from authenticateAdmin
   PermissionController.getUsersAndPermissions
 );
 
@@ -28,21 +32,21 @@ router.get(
 // Cập nhật quyền cho người dùng
 router.put(
   "/user/:userId",
-  authenticateAdmin,
+  requirePermission("change_user_role"), // Changed from authenticateAdmin
   PermissionController.updateUserPermissions
 );
 
 // Tạo quyền cho người dùng
 router.post(
   "/user",
-  authenticateAdmin,
+  requirePermission("change_user_role"), // Changed from authenticateAdmin
   PermissionController.createUserPermissions
 );
 
 // Xóa quyền của người dùng
 router.delete(
   "/user/:userId",
-  authenticateAdmin,
+  requirePermission("change_user_role"), // Changed from authenticateAdmin
   PermissionController.deleteUserPermissions
 );
 
@@ -50,14 +54,14 @@ router.delete(
 // Lấy danh sách employee và quyền của họ
 router.get(
   "/employees",
-  authenticateAdmin,
+  requirePermission("view_users"), // Changed from authenticateAdmin
   PermissionController.getEmployeesAndPermissions
 );
 
 // Cập nhật quyền cho employee (chỉ các quyền có thể quản lý)
 router.put(
   "/employee/:userId",
-  authenticateAdmin,
+  requirePermission("change_user_role"), // Changed from authenticateAdmin
   PermissionController.updateEmployeePermissions
 );
 

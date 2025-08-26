@@ -121,7 +121,7 @@ export const authenticate = (options: AuthOptions = {}) => {
       if (requireAdmin && req.user?.role !== "admin") {
         return res.status(403).json({
           success: false,
-          message: "Access denied. Admin privileges required.",
+          message: "Không có quyền truy cập, quyền quản trị viên yêu cầu.",
         });
       }
 
@@ -136,7 +136,7 @@ export const authenticate = (options: AuthOptions = {}) => {
         if (!req.user) {
           return res.status(401).json({
             success: false,
-            message: "Authentication required for this action.",
+            message: "Cần xác thực để thực hiện hành động này.",
           });
         }
 
@@ -180,8 +180,8 @@ export const authenticate = (options: AuthOptions = {}) => {
 
         if (!hasRequiredPermissions) {
           const message = requireAnyPermission
-            ? "You don't have any of the required permissions for this action."
-            : "You don't have all the required permissions for this action.";
+            ? "Bạn không có quyền nào trong số các quyền cần thiết cho hành động này."
+            : "Bạn không có tất cả các quyền cần thiết cho hành động này.";
 
           console.log(`❌ Permission denied for ${req.user?.email}`);
           console.log(`   - Required: [${requirePermissions.join(", ")}]`);

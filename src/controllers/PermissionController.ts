@@ -55,13 +55,8 @@ export class PermissionController {
       const { userId } = req.params;
       const { permissions } = req.body;
 
-      // Chỉ admin mới có thể cập nhật quyền
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền cập nhật quyền người dùng",
-        });
-      }
+      // Permission validation is already handled by requirePermission("change_user_role") middleware
+      // So we don't need to check admin role here anymore
 
       // Kiểm tra dữ liệu đầu vào
       if (!Array.isArray(permissions)) {
@@ -112,13 +107,7 @@ export class PermissionController {
     try {
       const { userId, permissions } = req.body;
 
-      // Chỉ admin mới có thể tạo quyền
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền tạo quyền người dùng",
-        });
-      }
+      // Permission validation is already handled by requirePermission("change_user_role") middleware
 
       // Kiểm tra dữ liệu đầu vào
       if (!userId || !Array.isArray(permissions)) {
@@ -179,13 +168,7 @@ export class PermissionController {
     try {
       const { userId } = req.params;
 
-      // Chỉ admin mới có thể xóa quyền
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền xóa quyền người dùng",
-        });
-      }
+      // Permission validation is already handled by requirePermission("change_user_role") middleware
 
       // Kiểm tra người dùng tồn tại
       const user = await User.findById(userId);
@@ -290,6 +273,7 @@ export class PermissionController {
         "edit_user",
         "delete_user",
         "change_user_status",
+        "change_user_role",
         "edit_post",
         "delete_post",
         "approve_post",
@@ -339,13 +323,7 @@ export class PermissionController {
     res: Response
   ) {
     try {
-      // Chỉ admin mới có thể xem danh sách
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền xem danh sách người dùng và quyền",
-        });
-      }
+      // Permission validation handled by requirePermission("view_users") middleware
 
       // Lấy danh sách người dùng (không phải admin)
       const users = await User.find({ role: { $ne: "admin" } }).select(
@@ -391,13 +369,7 @@ export class PermissionController {
     res: Response
   ) {
     try {
-      // Chỉ admin mới có thể cập nhật quyền employee
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền cập nhật quyền employee",
-        });
-      }
+      // Permission validation is already handled by requirePermission("change_user_role") middleware
 
       const { userId, permissions } = req.body;
 
@@ -430,6 +402,7 @@ export class PermissionController {
         "edit_user",
         "delete_user",
         "change_user_status",
+        "change_user_role",
         "create_post",
         "edit_post",
         "delete_post",
@@ -523,13 +496,7 @@ export class PermissionController {
     res: Response
   ) {
     try {
-      // Chỉ admin mới có thể xem
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền xem danh sách employee",
-        });
-      }
+      // Permission validation is already handled by requirePermission("view_users") middleware
 
       // Lấy danh sách employee
       const employees = await User.find({ role: "employee" }).select(
@@ -563,6 +530,7 @@ export class PermissionController {
         "edit_user",
         "delete_user",
         "change_user_status",
+        "change_user_role",
         "create_post",
         "edit_post",
         "delete_post",

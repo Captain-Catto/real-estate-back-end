@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { SidebarController } from "../controllers/SidebarController";
-import { requireAuth, requireAdmin } from "../middleware";
+import { requireAuth, requireAdmin, requirePermission } from "../middleware";
 
 const router = Router();
 
@@ -20,17 +20,25 @@ router.get("/configs", requireAdmin, SidebarController.getAllConfigs);
 
 /**
  * @route POST /api/sidebar/configs
- * @desc Tạo cấu hình sidebar mới (Admin only)
- * @access Private (Admin)
+ * @desc Tạo cấu hình sidebar mới (Admin + edit_settings permission)
+ * @access Private (Admin + Permission)
  */
-router.post("/configs", requireAdmin, SidebarController.createConfig);
+router.post(
+  "/configs",
+  requirePermission("edit_settings"),
+  SidebarController.createConfig
+);
 
 /**
  * @route PUT /api/sidebar/configs/:id
- * @desc Cập nhật cấu hình sidebar (Admin only)
- * @access Private (Admin)
+ * @desc Cập nhật cấu hình sidebar (Admin + edit_settings permission)
+ * @access Private (Admin + Permission)
  */
-router.put("/configs/:id", requireAdmin, SidebarController.updateConfig);
+router.put(
+  "/configs/:id",
+  requirePermission("edit_settings"),
+  SidebarController.updateConfig
+);
 
 /**
  * @route DELETE /api/sidebar/configs/:id
@@ -41,45 +49,45 @@ router.delete("/configs/:id", requireAdmin, SidebarController.deleteConfig);
 
 /**
  * @route PUT /api/sidebar/configs/:id/default
- * @desc Đặt cấu hình làm mặc định (Admin only)
- * @access Private (Admin)
+ * @desc Đặt cấu hình làm mặc định (Admin + edit_settings permission)
+ * @access Private (Admin + Permission)
  */
 router.put(
   "/configs/:id/default",
-  requireAdmin,
+  requirePermission("edit_settings"),
   SidebarController.setDefaultConfig
 );
 
 /**
  * @route PUT /api/sidebar/configs/:configId/reorder-items
- * @desc Sắp xếp lại thứ tự items trong cấu hình (Admin only)
- * @access Private (Admin)
+ * @desc Sắp xếp lại thứ tự items trong cấu hình (Admin + edit_settings permission)
+ * @access Private (Admin + Permission)
  */
 router.put(
   "/configs/:configId/reorder-items",
-  requireAdmin,
+  requirePermission("edit_settings"),
   SidebarController.reorderItems
 );
 
 /**
  * @route POST /api/sidebar/configs/:configId/items
- * @desc Thêm menu item mới vào cấu hình (Admin only)
- * @access Private (Admin)
+ * @desc Thêm menu item mới vào cấu hình (Admin + edit_settings permission)
+ * @access Private (Admin + Permission)
  */
 router.post(
   "/configs/:configId/items",
-  requireAdmin,
+  requirePermission("edit_settings"),
   SidebarController.addMenuItem
 );
 
 /**
  * @route DELETE /api/sidebar/configs/:configId/items/:itemId
- * @desc Xóa menu item khỏi cấu hình (Admin only)
- * @access Private (Admin)
+ * @desc Xóa menu item khỏi cấu hình (Admin + edit_settings permission)
+ * @access Private (Admin + Permission)
  */
 router.delete(
   "/configs/:configId/items/:itemId",
-  requireAdmin,
+  requirePermission("edit_settings"),
   SidebarController.removeMenuItem
 );
 export default router;

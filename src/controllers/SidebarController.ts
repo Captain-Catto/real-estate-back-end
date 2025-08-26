@@ -88,12 +88,7 @@ export class SidebarController {
   // Tạo cấu hình mới (chỉ admin)
   static async createConfig(req: AuthenticatedRequest, res: Response) {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền tạo cấu hình",
-        });
-      }
+      // Permission validation handled by requirePermission("edit_settings") middleware
 
       const { name, items, isDefault } = req.body;
 
@@ -141,15 +136,11 @@ export class SidebarController {
     }
   }
 
-  // Cập nhật cấu hình (chỉ admin)
+  // Cập nhật cấu hình (Permission-based instead of role-based)
   static async updateConfig(req: AuthenticatedRequest, res: Response) {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền cập nhật cấu hình",
-        });
-      }
+      // Permission check đã được thực hiện trong middleware
+      // requirePermission("edit_settings") đã verify user có quyền này
 
       const { id } = req.params;
       const updateData = req.body;
@@ -231,15 +222,10 @@ export class SidebarController {
     }
   }
 
-  // Xóa cấu hình (chỉ admin)
+  // Xóa cấu hình
   static async deleteConfig(req: AuthenticatedRequest, res: Response) {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền xóa cấu hình",
-        });
-      }
+      // Permission validation handled by requirePermission("edit_settings") middleware
 
       const { id } = req.params;
 
@@ -323,15 +309,10 @@ export class SidebarController {
     }
   }
 
-  // Sắp xếp lại thứ tự items (chỉ admin)
+  // Sắp xếp lại thứ tự items
   static async reorderItems(req: AuthenticatedRequest, res: Response) {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền sắp xếp menu",
-        });
-      }
+      // Permission validation handled by requirePermission("edit_settings") middleware
 
       const { configId } = req.params;
       const { itemOrders } = req.body; // [{ id: "item1", order: 1 }, ...]
@@ -381,15 +362,10 @@ export class SidebarController {
     }
   }
 
-  // Thêm menu item mới (chỉ admin)
+  // Thêm menu item mới
   static async addMenuItem(req: AuthenticatedRequest, res: Response) {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền thêm menu",
-        });
-      }
+      // Permission validation handled by requirePermission("edit_settings") middleware
 
       const { configId } = req.params;
       const {
@@ -463,15 +439,10 @@ export class SidebarController {
     }
   }
 
-  // Xóa menu item (chỉ admin)
+  // Xóa menu item
   static async removeMenuItem(req: AuthenticatedRequest, res: Response) {
     try {
-      if (req.user?.role !== "admin") {
-        return res.status(403).json({
-          success: false,
-          message: "Chỉ admin mới có quyền xóa menu",
-        });
-      }
+      // Permission validation handled by requirePermission("edit_settings") middleware
 
       const { configId, itemId } = req.params;
 
