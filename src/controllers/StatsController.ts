@@ -502,6 +502,9 @@ export class StatsController {
         return periodData ? periodData.count : 0;
       });
 
+      const duration = Date.now() - startTime;
+      console.log(`✅ [Backend] getUserChart completed in ${duration}ms`);
+
       res.json({
         success: true,
         data: {
@@ -517,9 +520,6 @@ export class StatsController {
           ],
         },
       });
-
-      const duration = Date.now() - startTime;
-      console.log(`✅ [Backend] getUserChart completed in ${duration}ms`);
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(
@@ -546,18 +546,34 @@ export class StatsController {
       // Load province data for mapping codes to names
       const fs = require("fs");
       const path = require("path");
-      const provinceDataPath = path.join(__dirname, "../../province.json");
-      const provinceData = JSON.parse(
-        fs.readFileSync(provinceDataPath, "utf8")
-      );
+      const provinceDataPath = path.resolve(process.cwd(), "province.json");
+      
+      console.log("🔍 Province data path:", provinceDataPath);
+      
+      if (!fs.existsSync(provinceDataPath)) {
+        console.error("❌ Province data file not found at:", provinceDataPath);
+        throw new Error(`Province data file not found at: ${provinceDataPath}`);
+      }
+      
+      let provinceData: any;
+      try {
+        provinceData = JSON.parse(fs.readFileSync(provinceDataPath, "utf8"));
+        console.log("✅ Province data loaded, keys:", Object.keys(provinceData).length);
+      } catch (parseError: any) {
+        console.error("❌ Error parsing province.json:", parseError);
+        throw new Error(`Error parsing province data: ${parseError?.message || "Unknown error"}`);
+      }
 
+      console.log("📊 Counting total posts...");
       const totalPosts = await Post.countDocuments();
+      console.log("📊 Total posts:", totalPosts);
 
+      console.log("📊 Aggregating location stats...");
       const locationStats = await Post.aggregate([
         {
           $group: {
             _id: "$location.province",
-            count: { $sum: 1 },
+            count: { $sum:1 },
           },
         },
         {
@@ -567,11 +583,16 @@ export class StatsController {
           $limit: 10,
         },
       ]);
+      
+      console.log("📊 Location stats result:", locationStats.length, "locations");
 
+      console.log("📊 Mapping location data...");
       const topLocations = locationStats.map((stat) => {
         const provinceCode = stat._id || "unknown";
         const provinceName =
           provinceData[provinceCode]?.name || "Không xác định";
+        
+        console.log(`📍 Province code: ${provinceCode} -> name: ${provinceName} (count: ${stat.count})`);
 
         return {
           province: provinceName,
@@ -583,14 +604,16 @@ export class StatsController {
               : 0,
         };
       });
+      
+      console.log("📊 Final top locations:", topLocations.length, "items");
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ [Backend] getTopLocations completed in ${duration}ms`);
 
       res.json({
         success: true,
         data: topLocations,
       });
-
-      const duration = Date.now() - startTime;
-      console.log(`✅ [Backend] getTopLocations completed in ${duration}ms`);
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(
@@ -911,6 +934,9 @@ export class StatsController {
         categoryCounts.vip,
       ];
 
+      const duration = Date.now() - startTime;
+      console.log(`✅ [Backend] getPostsChart completed in ${duration}ms`);
+
       res.json({
         success: true,
         data: {
@@ -936,9 +962,6 @@ export class StatsController {
           ],
         },
       });
-
-      const duration = Date.now() - startTime;
-      console.log(`✅ [Backend] getPostsChart completed in ${duration}ms`);
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(
@@ -1006,6 +1029,11 @@ export class StatsController {
       const labels = propertyTypes.map((item) => item._id);
       const data = propertyTypes.map((item) => item.count);
 
+      const duration = Date.now() - startTime;
+      console.log(
+        `✅ [Backend] getPropertyTypesChart completed in ${duration}ms`
+      );
+
       res.json({
         success: true,
         data: {
@@ -1035,11 +1063,6 @@ export class StatsController {
           ],
         },
       });
-
-      const duration = Date.now() - startTime;
-      console.log(
-        `✅ [Backend] getPropertyTypesChart completed in ${duration}ms`
-      );
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(
@@ -1169,7 +1192,7 @@ export class StatsController {
     // Load province data for mapping codes to names
     const fs = require("fs");
     const path = require("path");
-    const provinceDataPath = path.join(__dirname, "../../province.json");
+    const provinceDataPath = path.resolve(process.cwd(), "province.json");
     const provinceData = JSON.parse(fs.readFileSync(provinceDataPath, "utf8"));
 
     const locationStats = await Post.aggregate([

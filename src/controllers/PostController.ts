@@ -477,7 +477,8 @@ export class PostController {
         .populate("project", "name address")
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit);
+        .limit(limit)
+        .lean(); // Add .lean() to get plain objects
 
       const totalPosts = await Post.countDocuments(filter);
 
@@ -517,7 +518,8 @@ export class PostController {
       const post = await Post.findById(postId)
         .populate("author", "username email avatar phoneNumber")
         .populate("category", "name slug")
-        .populate("project", "name address");
+        .populate("project", "name address")
+        .lean(); // Add .lean() to get plain object
 
       if (!post) {
         return res.status(404).json({
@@ -574,7 +576,7 @@ export class PostController {
         success: true,
         data: {
           post: {
-            ...post.toObject(),
+            ...post, // Remove .toObject() since we're using .lean()
             location: locationWithName,
           },
         },
@@ -681,7 +683,8 @@ export class PostController {
         .populate("project", "name address")
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit);
+        .limit(limit)
+        .lean(); // Add .lean() to get plain objects instead of Mongoose documents
 
       // Map location code to name for each post
       const postsWithLocationName = await Promise.all(
@@ -710,7 +713,7 @@ export class PostController {
             };
           }
           return {
-            ...post.toObject(),
+            ...post,
             location: locationWithName,
           };
         })
@@ -773,7 +776,8 @@ export class PostController {
         .populate("author", "username email avatar")
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit);
+        .limit(limit)
+        .lean(); // Add .lean() to get plain objects
 
       const totalPosts = await Post.countDocuments({ author: userId });
 
@@ -829,7 +833,8 @@ export class PostController {
         .select("-content") // Exclude full content for performance
         .sort({ updatedAt: -1 })
         .skip(skip)
-        .limit(limit);
+        .limit(limit)
+        .lean(); // Add .lean() to get plain objects
 
       const totalPosts = await Post.countDocuments(query);
 
@@ -943,19 +948,25 @@ export class PostController {
         console.log(
           `📝 Updating ${key}: ${(post as any)[key]} → ${updates[key]}`
         );
-        
+
         // Special handling for ObjectId fields to avoid cast errors
-        const objectIdFields = ['project', 'approvedBy', 'rejectedBy'];
+        const objectIdFields = ["project", "approvedBy", "rejectedBy"];
         if (objectIdFields.includes(key)) {
           // Only set if it's a valid ObjectId string, otherwise set to null/undefined
-          if (updates[key] && updates[key] !== '' && mongoose.Types.ObjectId.isValid(updates[key])) {
+          if (
+            updates[key] &&
+            updates[key] !== "" &&
+            mongoose.Types.ObjectId.isValid(updates[key])
+          ) {
             (post as any)[key] = updates[key];
             console.log(`✅ Valid ObjectId for ${key}: ${updates[key]}`);
           } else {
             (post as any)[key] = null; // Set to null for empty/invalid ObjectId fields
-            console.log(`⚠️ Invalid ObjectId for ${key}, setting to null: "${updates[key]}"`);
+            console.log(
+              `⚠️ Invalid ObjectId for ${key}, setting to null: "${updates[key]}"`
+            );
           }
-        } else if (key === 'category') {
+        } else if (key === "category") {
           // Special handling for category - convert name to ObjectId
           const categoryValue = updates[key];
           if (mongoose.Types.ObjectId.isValid(categoryValue)) {
@@ -964,17 +975,18 @@ export class PostController {
             console.log(`✅ Valid ObjectId for category: ${categoryValue}`);
           } else {
             // Try to find category by name
-            const categoryDoc = await Category.findOne({ 
-              $or: [
-                { name: categoryValue },
-                { slug: categoryValue }
-              ]
+            const categoryDoc = await Category.findOne({
+              $or: [{ name: categoryValue }, { slug: categoryValue }],
             });
             if (categoryDoc) {
               (post as any)[key] = categoryDoc._id;
-              console.log(`✅ Found category by name "${categoryValue}": ${categoryDoc._id}`);
+              console.log(
+                `✅ Found category by name "${categoryValue}": ${categoryDoc._id}`
+              );
             } else {
-              console.log(`⚠️ Category not found: "${categoryValue}", keeping original`);
+              console.log(
+                `⚠️ Category not found: "${categoryValue}", keeping original`
+              );
               // Don't change category if not found
             }
           }
@@ -1059,7 +1071,7 @@ export class PostController {
         });
       }
 
-      const post = await Post.findById(postId);
+      const post = await Post.findById(postId).lean(); // Add .lean() to get plain object
       if (!post) {
         return res.status(404).json({
           success: false,
@@ -1113,19 +1125,25 @@ export class PostController {
         console.log(
           `📝 Updating ${key}: ${(post as any)[key]} → ${updates[key]}`
         );
-        
+
         // Special handling for ObjectId fields to avoid cast errors
-        const objectIdFields = ['project', 'approvedBy', 'rejectedBy'];
+        const objectIdFields = ["project", "approvedBy", "rejectedBy"];
         if (objectIdFields.includes(key)) {
           // Only set if it's a valid ObjectId string, otherwise set to null/undefined
-          if (updates[key] && updates[key] !== '' && mongoose.Types.ObjectId.isValid(updates[key])) {
+          if (
+            updates[key] &&
+            updates[key] !== "" &&
+            mongoose.Types.ObjectId.isValid(updates[key])
+          ) {
             (post as any)[key] = updates[key];
             console.log(`✅ Valid ObjectId for ${key}: ${updates[key]}`);
           } else {
             (post as any)[key] = null; // Set to null for empty/invalid ObjectId fields
-            console.log(`⚠️ Invalid ObjectId for ${key}, setting to null: "${updates[key]}"`);
+            console.log(
+              `⚠️ Invalid ObjectId for ${key}, setting to null: "${updates[key]}"`
+            );
           }
-        } else if (key === 'category') {
+        } else if (key === "category") {
           // Special handling for category - convert name to ObjectId
           const categoryValue = updates[key];
           if (mongoose.Types.ObjectId.isValid(categoryValue)) {
@@ -1134,17 +1152,18 @@ export class PostController {
             console.log(`✅ Valid ObjectId for category: ${categoryValue}`);
           } else {
             // Try to find category by name
-            const categoryDoc = await Category.findOne({ 
-              $or: [
-                { name: categoryValue },
-                { slug: categoryValue }
-              ]
+            const categoryDoc = await Category.findOne({
+              $or: [{ name: categoryValue }, { slug: categoryValue }],
             });
             if (categoryDoc) {
               (post as any)[key] = categoryDoc._id;
-              console.log(`✅ Found category by name "${categoryValue}": ${categoryDoc._id}`);
+              console.log(
+                `✅ Found category by name "${categoryValue}": ${categoryDoc._id}`
+              );
             } else {
-              console.log(`⚠️ Category not found: "${categoryValue}", keeping original`);
+              console.log(
+                `⚠️ Category not found: "${categoryValue}", keeping original`
+              );
               // Don't change category if not found
             }
           }
@@ -2076,11 +2095,95 @@ export class PostController {
         });
       }
 
-      const posts = await Post.find(filter)
-        .populate("author", "username email avatar")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit);
+      // Extract sortBy parameter
+      const { sortBy } = req.query;
+      console.log("🎯 Sort parameter received:", sortBy);
+
+      // Build sort object with priority first, then custom sort
+      let sortOptions: any = {};
+
+      // Handle sortBy parameter
+      if (sortBy) {
+        const sortStr = sortBy.toString();
+        if (sortStr === "area_asc") {
+          sortOptions.area = 1;
+        } else if (sortStr === "area_desc") {
+          sortOptions.area = -1;
+        } else if (sortStr === "price_asc") {
+          sortOptions.price = 1;
+        } else if (sortStr === "price_desc") {
+          sortOptions.price = -1;
+        } else if (sortStr === "createdAt_asc") {
+          sortOptions.createdAt = 1;
+        } else if (sortStr === "createdAt_desc") {
+          sortOptions.createdAt = -1;
+        }
+        console.log("🎯 Custom sort applied:", sortOptions);
+      }
+
+      // Always add priority sorting first, then custom sort, then default createdAt
+      const posts = await Post.aggregate([
+        { $match: filter },
+        {
+          $addFields: {
+            priorityScore: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ["$priority", "vip"] }, then: 3 },
+                  { case: { $eq: ["$priority", "premium"] }, then: 2 },
+                  { case: { $eq: ["$priority", "normal"] }, then: 1 },
+                ],
+                default: 0,
+              },
+            },
+          },
+        },
+        {
+          $sort: {
+            priorityScore: -1, // VIP first
+            ...sortOptions, // Then custom sort
+            createdAt: -1, // Finally by creation date
+          },
+        },
+        { $skip: skip },
+        { $limit: limit },
+        // Populate equivalent using lookup
+        {
+          $lookup: {
+            from: "users",
+            localField: "author",
+            foreignField: "_id",
+            as: "author",
+            pipeline: [{ $project: { username: 1, email: 1, avatar: 1 } }],
+          },
+        },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "category",
+            foreignField: "_id",
+            as: "category",
+            pipeline: [{ $project: { name: 1, slug: 1 } }],
+          },
+        },
+        {
+          $lookup: {
+            from: "projects",
+            localField: "project",
+            foreignField: "_id",
+            as: "project",
+            pipeline: [{ $project: { name: 1, address: 1 } }],
+          },
+        },
+        {
+          $addFields: {
+            author: { $arrayElemAt: ["$author", 0] },
+            category: { $arrayElemAt: ["$category", 0] },
+            project: { $arrayElemAt: ["$project", 0] },
+          },
+        },
+        { $unset: "priorityScore" }, // Remove the helper field
+      ]);
 
       console.log(`Found ${posts.length} posts matching criteria`);
 
@@ -2122,7 +2225,7 @@ export class PostController {
           }
 
           return {
-            ...post.toObject(),
+            ...post,
             location: locationWithName,
           };
         })
@@ -2358,7 +2461,8 @@ export class PostController {
       const currentPost = await Post.findById(postId)
         .populate("category", "name slug")
         .populate("author", "name email")
-        .populate("project", "name address");
+        .populate("project", "name address")
+        .lean(); // Add .lean() to get plain object
 
       if (!currentPost) {
         return res.status(404).json({
@@ -2404,7 +2508,8 @@ export class PostController {
           .populate("author", "name email")
           .populate("project", "name slug")
           .sort({ createdAt: -1 })
-          .limit(limit);
+          .limit(limit)
+          .lean(); // Add .lean() to get plain objects
 
         console.log(`Retrieved ${similarPosts.length} posts in same project`);
         searchCriteria = "project";
@@ -2440,7 +2545,8 @@ export class PostController {
             .populate("author", "name email")
             .populate("project", "name slug")
             .sort({ createdAt: -1 })
-            .limit(limit);
+            .limit(limit)
+            .lean(); // Add .lean() to get plain objects
 
           console.log(`Retrieved ${similarPosts.length} posts in same ward`);
           searchCriteria = "ward";
@@ -2489,7 +2595,8 @@ export class PostController {
           .populate("author", "name email")
           .populate("project", "name slug")
           .sort({ createdAt: -1 })
-          .limit(limit - similarPosts.length);
+          .limit(limit - similarPosts.length)
+          .lean(); // Add .lean() to get plain objects
 
         console.log(
           `Retrieved ${categoryPosts.length} posts with same category and type`
